@@ -5,6 +5,7 @@ import { createClient } from 'pexels';
 import { LinearGradient } from 'expo-linear-gradient';
 import axios from 'axios';
 import { Audio } from 'expo-av';
+import WordList from './lib/vocab.json';
 
 const tabs = ['For You', 'Liked']; // Customize your tabs
 const client = createClient('XoJwUYOzKMoDE3chOvLGeDqEoSdDtUNseGnCEnIQB4n2V3Te2lMlQLHS');
@@ -24,74 +25,97 @@ const LessonScreen = ({ navigation }) => {
     const [overflowingItems, setOverflowingItems] = useState({});
   
     const fetchRandomWordsAndImages = async () => {
-        try {
-            const numberOfWords = 5;
-            const combinedFetchPromises = Array.from({ length: numberOfWords }, async () => {
-                const response = await axios.get('https://wordsapiv1.p.rapidapi.com/words/?random=true&frequencyMax=6', {
-                    headers: {
-                        'X-RapidAPI-Host': 'wordsapiv1.p.rapidapi.com',
-                        'X-RapidAPI-Key': 'a35d25fb98mshd2eb21dfb3d12aep16da25jsnb9e7d92258d1',
-                    },
-                });
-    
-                const { word, results, pronunciation } = response.data;
-               
-                if (Array.isArray(results) && results.length > 0) {
-                    setLoadingMore(true);
-                    const firstDefinition = capitalizeFirstLetter(results[0].definition);
-                    const firstPartOfSpeech = formatPartOfSpeech(results[0].partOfSpeech); 
-                    const capitalizedWord = capitalizeFirstLetter(word);
-                    const wordPronunciation = pronunciation
-                        ? pronunciation.all
-                            ? `/${pronunciation.all}/`
-                            : `/${pronunciation}/`
-                        : 'Unavailable';
-    
-                    // Fetch image for the current word
-                    const imageUrl = await fetchImage(word);
-    
-                    // Fetch audio URL for the current word
-                    const audioUrl = await fetchAudio(word);
-    
-                    return {
-                        id: word,
-                        word: capitalizedWord,
-                        partOfSpeech: firstPartOfSpeech,
-                        meaning: firstDefinition,
-                        pronunciation: wordPronunciation,
-                        imageUrl: imageUrl,
-                        audioUrl: audioUrl,
-                    };
-                }
-            });
-    
-            const combinedResponses = await Promise.all(combinedFetchPromises);
-            const validResponses = combinedResponses.filter(Boolean);
-    
-            // Extract word details and image URLs
-            const newVocabulary = validResponses.map((item) => {
-                return {
-                    id: item.id,
-                    word: item.word,
-                    meaning: item.meaning,
-                    partOfSpeech: item.partOfSpeech,
-                    pronunciation: item.pronunciation,
-                    audioUrl: item.audioUrl,
-                };
-            });
-            // Append the new words to the existing vocabulary data
-            setVocabularyData((prevVocabularyData) => [...prevVocabularyData, ...newVocabulary]);
-
-            const imageURLs = validResponses.reduce((acc, curr) => {
-                acc[curr.id] = curr.imageUrl;
-                return acc;
-            }, {});
-    
-            setImageUrls((prevImageUrls) => ({ ...prevImageUrls, ...imageURLs }));
-        } catch (error) {
-            console.error('Error fetching random words and images:', error);
-        }
-    };
+      try {
+          const numberOfWords = 5;
+  
+          // Load your JSON file
+          const vocabData = require('./lib/vocab.json');
+  
+          // Extract all words from the JSON file
+          const allWords = Object.values(vocabData).flat();
+  
+          // Shuffle the array to randomize the order of words
+          const shuffledWords = shuffleArray(allWords);
+  
+          // Take the first 5 words from the shuffled array
+          const wordsToFetch = shuffledWords.slice(0, numberOfWords);
+          console.log(wordsToFetch);
+  
+          const combinedFetchPromises = wordsToFetch.map(async (word) => {
+              try {
+                  const response = await axios.get(`https://wordsapiv1.p.rapidapi.com/words/${word}`, {
+                      headers: {
+                          'X-RapidAPI-Host': 'wordsapiv1.p.rapidapi.com',
+                          'X-RapidAPI-Key': 'a35d25fb98mshd2eb21dfb3d12aep16da25jsnb9e7d92258d1',
+                      },
+                  });
+  
+                  const { word: apiWord, results, pronunciation } = response.data;
+  
+                  if (Array.isArray(results) && results.length > 0) {
+                      setLoadingMore(true);
+                      const firstDefinition = capitalizeFirstLetter(results[0].definition);
+                      const firstPartOfSpeech = formatPartOfSpeech(results[0].partOfSpeech);
+                      const capitalizedWord = capitalizeFirstLetter(apiWord);
+                      const wordPronunciation = pronunciation
+                          ? pronunciation.all
+                              ? `/${pronunciation.all}/`
+                              : `/${pronunciation}/`
+                          : 'Unavailable';
+  
+                      // Fetch image for the current word
+                      const imageUrl = await fetchImage(word);
+  
+                      // Fetch audio URL for the current word
+                      const audioUrl = await fetchAudio(word);
+  
+                      return {
+                          id: word,
+                          word: capitalizedWord,
+                          partOfSpeech: firstPartOfSpeech,
+                          meaning: firstDefinition,
+                          pronunciation: wordPronunciation,
+                          imageUrl: imageUrl,
+                          audioUrl: audioUrl,
+                      };
+                  } else {
+                      console.error(`No results found for word: ${word}`);
+                      return null; // Skip this word
+                  }
+              } catch (error) {
+                  console.error(`Error fetching word '${word}': ${error.message}`);
+                  return null; // Skip this word
+              }
+          });
+  
+          const combinedResponses = await Promise.all(combinedFetchPromises);
+          const validResponses = combinedResponses.filter((response) => response !== null);
+  
+          // Extract word details and image URLs
+          const newVocabulary = validResponses.map((item) => {
+              return {
+                  id: item.id,
+                  word: item.word,
+                  meaning: item.meaning,
+                  partOfSpeech: item.partOfSpeech,
+                  pronunciation: item.pronunciation,
+                  audioUrl: item.audioUrl,
+              };
+          });
+  
+          // Append the new words to the existing vocabulary data
+          setVocabularyData((prevVocabularyData) => [...prevVocabularyData, ...newVocabulary]);
+  
+          const imageURLs = validResponses.reduce((acc, curr) => {
+              acc[curr.id] = curr.imageUrl;
+              return acc;
+          }, {});
+  
+          setImageUrls((prevImageUrls) => ({ ...prevImageUrls, ...imageURLs }));
+      } catch (error) {
+          console.error('Error fetching random words and images:', error);
+      }
+  };  
     
     const fetchAudio = async (word) => {
       try {
