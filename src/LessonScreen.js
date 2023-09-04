@@ -5,11 +5,14 @@ import { createClient } from 'pexels';
 import { LinearGradient } from 'expo-linear-gradient';
 import axios from 'axios';
 import { Audio } from 'expo-av';
-import WordList from './lib/vocab.json';
+import * as SplashScreen from 'expo-splash-screen';
+import * as Haptics from 'expo-haptics';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 
 const tabs = ['For You', 'Liked']; // Customize your tabs
 const client = createClient('XoJwUYOzKMoDE3chOvLGeDqEoSdDtUNseGnCEnIQB4n2V3Te2lMlQLHS');
-
+SplashScreen.preventAutoHideAsync();
 
 const LessonScreen = ({ navigation }) => {
       
@@ -23,99 +26,110 @@ const LessonScreen = ({ navigation }) => {
     const [vocabularyData, setVocabularyData] = useState([]);
     const [loadingMore, setLoadingMore] = useState(false);
     const [overflowingItems, setOverflowingItems] = useState({});
+    const [likedItemsFromStorage, setLikedItemsFromStorage] = useState([]);
+
   
     const fetchRandomWordsAndImages = async () => {
       try {
-          const numberOfWords = 5;
-  
-          // Load your JSON file
-          const vocabData = require('./lib/vocab.json');
-  
-          // Extract all words from the JSON file
-          const allWords = Object.values(vocabData).flat();
-  
-          // Shuffle the array to randomize the order of words
-          const shuffledWords = shuffleArray(allWords);
-  
-          // Take the first 5 words from the shuffled array
-          const wordsToFetch = shuffledWords.slice(0, numberOfWords);
-          console.log(wordsToFetch);
-  
-          const combinedFetchPromises = wordsToFetch.map(async (word) => {
-              try {
-                  const response = await axios.get(`https://wordsapiv1.p.rapidapi.com/words/${word}`, {
-                      headers: {
-                          'X-RapidAPI-Host': 'wordsapiv1.p.rapidapi.com',
-                          'X-RapidAPI-Key': 'a35d25fb98mshd2eb21dfb3d12aep16da25jsnb9e7d92258d1',
-                      },
-                  });
-  
-                  const { word: apiWord, results, pronunciation } = response.data;
-  
-                  if (Array.isArray(results) && results.length > 0) {
-                      setLoadingMore(true);
-                      const firstDefinition = capitalizeFirstLetter(results[0].definition);
-                      const firstPartOfSpeech = formatPartOfSpeech(results[0].partOfSpeech);
-                      const capitalizedWord = capitalizeFirstLetter(apiWord);
-                      const wordPronunciation = pronunciation
-                          ? pronunciation.all
-                              ? `/${pronunciation.all}/`
-                              : `/${pronunciation}/`
-                          : 'Unavailable';
-  
-                      // Fetch image for the current word
-                      const imageUrl = await fetchImage(word);
-  
-                      // Fetch audio URL for the current word
-                      const audioUrl = await fetchAudio(word);
-  
-                      return {
-                          id: word,
-                          word: capitalizedWord,
-                          partOfSpeech: firstPartOfSpeech,
-                          meaning: firstDefinition,
-                          pronunciation: wordPronunciation,
-                          imageUrl: imageUrl,
-                          audioUrl: audioUrl,
-                      };
-                  } else {
-                      console.error(`No results found for word: ${word}`);
-                      return null; // Skip this word
-                  }
-              } catch (error) {
-                  console.error(`Error fetching word '${word}': ${error.message}`);
-                  return null; // Skip this word
-              }
-          });
-  
-          const combinedResponses = await Promise.all(combinedFetchPromises);
-          const validResponses = combinedResponses.filter((response) => response !== null);
-  
-          // Extract word details and image URLs
-          const newVocabulary = validResponses.map((item) => {
+        const numberOfWords = 5;
+    
+        // Load your JSON file
+        const vocabData = require('./lib/vocab.json');
+    
+        // Extract all words from the JSON file
+        const allWords = Object.values(vocabData).flat();
+    
+        // Shuffle the array to randomize the order of words
+        const shuffledWords = shuffleArray(allWords);
+    
+        // Take the first 5 unique words from the shuffled array
+        const wordsToFetch = [];
+        const processedWords = new Set(); // To keep track of processed words
+    
+        for (const word of shuffledWords) {
+          if (!processedWords.has(word) && wordsToFetch.length < numberOfWords) {
+            wordsToFetch.push(word);
+            processedWords.add(word);
+          }
+        }
+    
+        const combinedFetchPromises = wordsToFetch.map(async (word) => {
+          try {
+            const response = await axios.get(`https://wordsapiv1.p.rapidapi.com/words/${word}`, {
+              headers: {
+                'X-RapidAPI-Host': 'wordsapiv1.p.rapidapi.com',
+                'X-RapidAPI-Key': 'a35d25fb98mshd2eb21dfb3d12aep16da25jsnb9e7d92258d1',
+              },
+            });
+    
+            const { word: apiWord, results, pronunciation } = response.data;
+            await SplashScreen.hideAsync();
+    
+            if (Array.isArray(results) && results.length > 0) {
+              setLoadingMore(true);
+              const firstDefinition = capitalizeFirstLetter(results[1].definition);
+              const firstPartOfSpeech = formatPartOfSpeech(results[1].partOfSpeech);
+              const capitalizedWord = capitalizeFirstLetter(apiWord);
+              const wordPronunciation = pronunciation
+                ? pronunciation.all
+                  ? `/${pronunciation.all}/`
+                  : `/${pronunciation}/`
+                : 'Unavailable';
+    
+              // Fetch image for the current word
+              const imageUrl = await fetchImage(word);
+    
+              // Fetch audio URL for the current word
+              const audioUrl = await fetchAudio(word);
+    
               return {
-                  id: item.id,
-                  word: item.word,
-                  meaning: item.meaning,
-                  partOfSpeech: item.partOfSpeech,
-                  pronunciation: item.pronunciation,
-                  audioUrl: item.audioUrl,
+                id: word,
+                word: capitalizedWord,
+                partOfSpeech: firstPartOfSpeech,
+                meaning: firstDefinition,
+                pronunciation: wordPronunciation,
+                imageUrl: imageUrl,
+                audioUrl: audioUrl,
               };
-          });
-  
-          // Append the new words to the existing vocabulary data
-          setVocabularyData((prevVocabularyData) => [...prevVocabularyData, ...newVocabulary]);
-  
-          const imageURLs = validResponses.reduce((acc, curr) => {
-              acc[curr.id] = curr.imageUrl;
-              return acc;
-          }, {});
-  
-          setImageUrls((prevImageUrls) => ({ ...prevImageUrls, ...imageURLs }));
+            } else {
+              console.error(`No results found for word: ${word}`);
+              return null; // Skip this word
+            }
+          } catch (error) {
+            console.error(`Error fetching word '${word}': ${error.message}`);
+            return null; // Skip this word
+          }
+        });
+    
+        const combinedResponses = await Promise.all(combinedFetchPromises);
+        const validResponses = combinedResponses.filter((response) => response !== null);
+    
+        // Extract word details and image URLs
+        const newVocabulary = validResponses.map((item) => {
+          return {
+            id: item.id,
+            word: item.word,
+            meaning: item.meaning,
+            partOfSpeech: item.partOfSpeech,
+            pronunciation: item.pronunciation,
+            audioUrl: item.audioUrl,
+          };
+        });
+    
+        // Append the new words to the existing vocabulary data
+        setVocabularyData((prevVocabularyData) => [...prevVocabularyData, ...newVocabulary]);
+    
+        const imageURLs = validResponses.reduce((acc, curr) => {
+          acc[curr.id] = curr.imageUrl;
+          return acc;
+        }, {});
+    
+        setImageUrls((prevImageUrls) => ({ ...prevImageUrls, ...imageURLs }));
       } catch (error) {
-          console.error('Error fetching random words and images:', error);
+        console.error('Error fetching random words and images:', error);
+        await SplashScreen.hideAsync();
       }
-  };  
+    };    
     
     const fetchAudio = async (word) => {
       try {
@@ -143,39 +157,51 @@ const LessonScreen = ({ navigation }) => {
       return null;
   };
   
-    const placeholderWords = [
-        'landscape', 'city', 'sea', 'mountain', 'sky', 'Vintage product', 'japan shrine', 'mountain'
-    ];
-    
-    const fetchImage = async (word) => {
-        try {
-          const response = await client.photos.search({ query: word, per_page: 5 });
-          const photos = response.photos;
-      
-          if (photos.length > 0) {
-            const randomIndex = Math.floor(Math.random() * photos.length);
-            return photos[randomIndex].src.large;
-          }
-      
-          // If no photos were found, try placeholder images
-          const shuffledPlaceholderWords = shuffleArray(placeholderWords.slice());
-          const placeholderResponses = await Promise.all(
-            shuffledPlaceholderWords.map(async (placeholderWord) => {
-              const placeholderResponse = await client.photos.search({ query: placeholderWord, per_page: 10 });
-              return placeholderResponse.photos;
-            })
-          );
-      
-          const placeholderPhotos = placeholderResponses.flat();
-          if (placeholderPhotos.length > 0) {
-            const randomIndex = Math.floor(Math.random() * placeholderPhotos.length);
-            return placeholderPhotos[randomIndex].src.large;
-          }
-        } catch (error) {
-          console.error('Error fetching image:', error);
+  const placeholderWords = [
+    'landscape', 'city', 'sea', 'mountain', 'sky', 'Vintage product', 'japan shrine', 'mountain'
+  ];
+  
+  const fetchedImages = new Set();
+  
+  const fetchImage = async (word) => {
+    try {
+      const response = await client.photos.search({ query: word, per_page: 2 });
+      const photos = response.photos;
+  
+      if (photos.length > 0) {
+        let randomIndex = Math.floor(Math.random() * photos.length);
+        let imageUrl = photos[randomIndex].src.large;
+        while (fetchedImages.has(imageUrl)) {
+          randomIndex = Math.floor(Math.random() * photos.length);
+          imageUrl = photos[randomIndex].src.large;
         }
-        return 'https://example.com/placeholder-image.jpg';
-      };
+        fetchedImages.add(imageUrl);
+        return imageUrl;
+      }
+  
+      // If no photos were found, try placeholder images
+      const shuffledPlaceholderWords = shuffleArray(placeholderWords.slice());
+      for (const placeholderWord of shuffledPlaceholderWords) {
+        const placeholderResponse = await client.photos.search({ query: placeholderWord, per_page: 3 });
+        const placeholderPhotos = placeholderResponse.photos;
+        if (placeholderPhotos.length > 0) {
+          let randomIndex = Math.floor(Math.random() * placeholderPhotos.length);
+          let imageUrl = placeholderPhotos[randomIndex].src.large;
+          while (fetchedImages.has(imageUrl)) {
+            randomIndex = Math.floor(Math.random() * placeholderPhotos.length);
+            imageUrl = placeholderPhotos[randomIndex].src.large;
+          }
+          fetchedImages.add(imageUrl);
+          return imageUrl;
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching image:', error);
+    }
+    return 'https://example.com/placeholder-image.jpg';
+  };
+  
+
       // Function to capitalize the first letter of a string
       const capitalizeFirstLetter = (string) => {
           return string.charAt(0).toUpperCase() + string.slice(1);
@@ -238,12 +264,13 @@ const LessonScreen = ({ navigation }) => {
     const handleDoubleTap = async (item, event) => {
       const currentTime = Date.now();
       const isLiked = likedItems.includes(item.id);
-      const doubleTapThreshold = 600; // Set your desired double tap threshold in milliseconds
+      const doubleTapThreshold = 600; // Set your desired double-tap threshold in milliseconds
       const heartSize = 30; // Update this with your heart icon size
       const heartSizeFactor = heartSize / 2;
     
       if (!heartAnimationActive && currentTime - lastTapTime < doubleTapThreshold) {
         const { locationX, locationY } = event.nativeEvent;
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     
         // Check if tap coordinates are within a reasonable range
         const tapPositionIsValid =
@@ -288,8 +315,30 @@ const LessonScreen = ({ navigation }) => {
               });
             }, 400);
     
+            // Check if the item is already liked
             if (!isLiked) {
               setLikedItems([...likedItems, item.id]);
+    
+              // Save the item to AsyncStorage
+              try {
+                const storedLikedItems = await AsyncStorage.getItem('likedItems');
+                const parsedLikedItems = storedLikedItems ? JSON.parse(storedLikedItems) : [];
+        
+                // Add imageUrl to the item before saving
+                const itemWithImageUrl = {
+                    ...item,
+                    imageUrl: imageUrls[item.id],   // Assign the imageUrl for the current item
+                };
+        
+                const updatedStoredLikedItems = [...parsedLikedItems, itemWithImageUrl];
+                await AsyncStorage.setItem(
+                    'likedItems',
+                    JSON.stringify(updatedStoredLikedItems)
+                );
+                testSavedData();
+              } catch (error) {
+                console.error('Error saving liked item to AsyncStorage:', error);
+              }
             }
           }
         }
@@ -297,7 +346,7 @@ const LessonScreen = ({ navigation }) => {
     
       setLastTapTime(currentTime);
     };    
-    
+   
   const heartBeatValue = useState(new Animated.Value(1))[0];
 
   const startHeartBeatAnimation = () => {
@@ -315,17 +364,80 @@ const LessonScreen = ({ navigation }) => {
     ]).start();
   };
 
-    const toggleLike = (item) => {
-        const isLiked = likedItems.includes(item.id);
-        if (isLiked) {
-         
-            setLikedItems(likedItems.filter(id => id !== item.id));
-        } else {
-          startHeartBeatAnimation();
-            setLikedItems([...likedItems, item.id]);
+  // const testSavedData = async () => {
+  //   try {
+  //     const savedData = await AsyncStorage.getItem('likedItems');
+  //     if (savedData) {
+  //       console.log('Saved Data:', JSON.parse(savedData));
+  //     } else {
+  //       console.log('No data saved in AsyncStorage.');
+  //     }
+  //   } catch (error) {
+  //     console.error('Error retrieving saved data from AsyncStorage:', error);
+  //   }
+  // };
+  
+
+    const toggleLike = async (item) => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      const isLiked = likedItems.includes(item.id);
+    
+      if (isLiked) {
+        // Remove the item from the likedItems array
+        const updatedLikedItems = likedItems.filter((id) => id !== item.id);
+        setLikedItems(updatedLikedItems);
+    
+        // Remove the item from AsyncStorage
+        try {
+          const storedLikedItems = await AsyncStorage.getItem('likedItems');
+          if (storedLikedItems) {
+            const parsedLikedItems = JSON.parse(storedLikedItems);
+            const updatedStoredLikedItems = parsedLikedItems.filter(
+              (storedItem) => storedItem.id !== item.id
+            );
+            await AsyncStorage.setItem(
+              'likedItems',
+              JSON.stringify(updatedStoredLikedItems)
+            );
+    
+            // // Test if data is saved
+            // testSavedData();
+          }
+        } catch (error) {
+          console.error('Error removing liked item from AsyncStorage:', error);
         }
+      } else {
+        startHeartBeatAnimation();
+        setLikedItems([...likedItems, item.id]);
+    
+        // Save the item to AsyncStorage with imageUrl
+        try {
+          const storedLikedItems = await AsyncStorage.getItem('likedItems');
+          const parsedLikedItems = storedLikedItems ? JSON.parse(storedLikedItems) : [];
+    
+          // Add imageUrl to the item before saving
+          const itemWithImageUrl = {
+            ...item,
+            imageUrl: imageUrls[item.id],
+          };
+    
+          const updatedStoredLikedItems = [...parsedLikedItems, itemWithImageUrl];
+          await AsyncStorage.setItem(
+            'likedItems',
+            JSON.stringify(updatedStoredLikedItems)
+          );
+    
+          // Test if data is saved
+          // testSavedData();
+        } catch (error) {
+          console.error('Error saving liked item to AsyncStorage:', error);
+        }
+      }
     };
+  
+  
     const shareWord = (word, pronunciation, meaning, partOfSpeech) => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)
       Share.share({
         message: `${word} ${pronunciation} (${partOfSpeech}): ${meaning}`,
       })
@@ -365,7 +477,25 @@ const LessonScreen = ({ navigation }) => {
       [index]: isOverflowing,
     }));
   };
-  
+
+  // Create a function to fetch and update liked items from AsyncStorage
+  const fetchLikedItems = async () => {
+    try {
+      const storedLikedItems = await AsyncStorage.getItem('likedItems');
+      if (storedLikedItems) {
+        const parsedLikedItems = JSON.parse(storedLikedItems);
+        setLikedItemsFromStorage(parsedLikedItems);
+      }
+    } catch (error) {
+      console.error('Error retrieving liked items from AsyncStorage:', error);
+    }
+  };
+
+  // Call the fetchLikedItems function whenever you switch to the "Liked" tab or in componentDidMount
+  useEffect(() => {
+    fetchLikedItems();
+  }, [activeTab]); // activeTab is a state variable that changes when you switch tabs
+
   const toggleExpansion = (index) => {
     setExpandedItem(index === expandedItem ? null : index);
   };  
@@ -376,6 +506,8 @@ const LessonScreen = ({ navigation }) => {
         const isImageLoaded = imageLoaded[item.id];
         const isOverflowing = overflowingItems[index];
         const shouldShowMoreButton = isOverflowing && !isExpanded;
+        const isForYouTab = activeTab === 0; // Assuming 0 represents the "For You" tab
+        const imageSource = isForYouTab ? imageUrls[item.id] : item.imageUrl;
         
         
     return (
@@ -384,7 +516,7 @@ const LessonScreen = ({ navigation }) => {
             onPress={(event) => handleDoubleTap(item, event)}
         >
         <ImageBackground
-          source={isImageLoaded ? { uri: imageUrls[item.id] } : null}
+          source={{ uri: imageSource }}
           onLoad={() => setImageLoaded((prevLoaded) => ({ ...prevLoaded, [item.id]: true }))}
           style={styles.card}
           imageStyle={styles.card}
@@ -518,7 +650,7 @@ const LessonScreen = ({ navigation }) => {
           // snapToAlignment="start"
           decelerationRate={'fast'} 
           onEndReached={fetchRandomWordsAndImages}
-          onEndReachedThreshold={0.1} // Adjust this value based on your preference 
+          onEndReachedThreshold={0.2} // Adjust this value based on your preference 
           ListFooterComponent={() => (
             <View style={{ marginTop: 5 }}>
               {loadingMore && vocabularyData.length > 0 ? (
@@ -532,8 +664,17 @@ const LessonScreen = ({ navigation }) => {
       {vocabularyData.length > 0 && loadingMore ? (
          <View style={styles.cardContainer}>
             <View style={styles.likedContainer}> 
-              <ActivityIndicator size="large" color="#fff" />
-              <Text  style={{ marginTop: 10 , color: '#fff', fontSize: 18}}>Android is updating</Text>
+            <FlatList
+              data={likedItemsFromStorage}
+              renderItem={renderItem}
+              keyExtractor={(item) => item.id.toString()}
+              showsVerticalScrollIndicator={false}
+              pagingEnabled={true}
+              // likedItems={likedItems}
+              // snapToAlignment="start"
+              decelerationRate={'fast'}
+            />
+
             </View>
           </View>
           ) : null}
@@ -583,17 +724,6 @@ const styles = StyleSheet.create({
     borderBottomColor: '#fff', // Change the color of the line as needed
     width: 35,
     alignSelf: 'center', // Center the line horizontally
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.2,
-        shadowRadius: 2,
-      },
-      android: {
-        elevation: 5, // This adds shadow for Android
-      },
-    }),
   },
   
   activityIndicatorContainer: {
@@ -619,7 +749,7 @@ const styles = StyleSheet.create({
   },
   likedContainer: {
     flex: 1,
-    backgroundColor: '#007AFF',
+    backgroundColor: '#00000',
     justifyContent: 'center',
     alignItems: 'center',
     borderRadius: 20,
