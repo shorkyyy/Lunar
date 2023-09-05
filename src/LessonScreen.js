@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { View, FlatList, Text, StyleSheet, Dimensions, TouchableOpacity, ImageBackground, ScrollView, SafeAreaView, Animated, TouchableWithoutFeedback, ActivityIndicator, StatusBar, Share } from 'react-native';
+import { View, FlatList, Text, StyleSheet, Dimensions, TouchableOpacity, ImageBackground, ScrollView, SafeAreaView, Animated, TouchableWithoutFeedback, ActivityIndicator, StatusBar, Share, LayoutAnimation, UIManager } from 'react-native';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import { createClient } from 'pexels';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -27,6 +27,8 @@ const LessonScreen = ({ navigation }) => {
     const [loadingMore, setLoadingMore] = useState(false);
     const [overflowingItems, setOverflowingItems] = useState({});
     const [likedItemsFromStorage, setLikedItemsFromStorage] = useState([]);
+    UIManager.setLayoutAnimationEnabledExperimental && UIManager.setLayoutAnimationEnabledExperimental(true);
+
 
   
     const fetchRandomWordsAndImages = async () => {
@@ -44,12 +46,16 @@ const LessonScreen = ({ navigation }) => {
     
         // Take the first 5 unique words from the shuffled array
         const wordsToFetch = [];
-        const processedWords = new Set(); // To keep track of processed words
+    
+        const isDuplicate = (word) => wordsToFetch.some((item) => item === word);
     
         for (const word of shuffledWords) {
-          if (!processedWords.has(word) && wordsToFetch.length < numberOfWords) {
+          if (wordsToFetch.length >= numberOfWords) {
+            break; // Exit the loop if we already have enough words
+          }
+    
+          if (!isDuplicate(word)) {
             wordsToFetch.push(word);
-            processedWords.add(word);
           }
         }
     
@@ -67,8 +73,8 @@ const LessonScreen = ({ navigation }) => {
     
             if (Array.isArray(results) && results.length > 0) {
               setLoadingMore(true);
-              const firstDefinition = capitalizeFirstLetter(results[1].definition);
-              const firstPartOfSpeech = formatPartOfSpeech(results[1].partOfSpeech);
+              const firstDefinition = capitalizeFirstLetter(results[0].definition);
+              const firstPartOfSpeech = formatPartOfSpeech(results[0].partOfSpeech);
               const capitalizedWord = capitalizeFirstLetter(apiWord);
               const wordPronunciation = pronunciation
                 ? pronunciation.all
@@ -129,7 +135,7 @@ const LessonScreen = ({ navigation }) => {
         console.error('Error fetching random words and images:', error);
         await SplashScreen.hideAsync();
       }
-    };    
+    };       
     
     const fetchAudio = async (word) => {
       try {
@@ -169,39 +175,41 @@ const LessonScreen = ({ navigation }) => {
       const photos = response.photos;
   
       if (photos.length > 0) {
-        let randomIndex = Math.floor(Math.random() * photos.length);
-        let imageUrl = photos[randomIndex].src.large;
-        while (fetchedImages.has(imageUrl)) {
-          randomIndex = Math.floor(Math.random() * photos.length);
-          imageUrl = photos[randomIndex].src.large;
+        // Filter out images that have already been fetched
+        const availableImages = photos.filter((photo) => !fetchedImages.has(photo.src.large));
+  
+        if (availableImages.length > 0) {
+          let randomIndex = Math.floor(Math.random() * availableImages.length);
+          let imageUrl = availableImages[randomIndex].src.large;
+          fetchedImages.add(imageUrl);
+          return imageUrl;
         }
-        fetchedImages.add(imageUrl);
-        return imageUrl;
       }
   
-      // If no photos were found, try placeholder images
+      // If no photos were found or all were duplicates, try placeholder images
       const shuffledPlaceholderWords = shuffleArray(placeholderWords.slice());
       for (const placeholderWord of shuffledPlaceholderWords) {
         const placeholderResponse = await client.photos.search({ query: placeholderWord, per_page: 3 });
         const placeholderPhotos = placeholderResponse.photos;
+  
         if (placeholderPhotos.length > 0) {
-          let randomIndex = Math.floor(Math.random() * placeholderPhotos.length);
-          let imageUrl = placeholderPhotos[randomIndex].src.large;
-          while (fetchedImages.has(imageUrl)) {
-            randomIndex = Math.floor(Math.random() * placeholderPhotos.length);
-            imageUrl = placeholderPhotos[randomIndex].src.large;
+          // Filter out placeholder images that have already been fetched
+          const availablePlaceholderImages = placeholderPhotos.filter((photo) => !fetchedImages.has(photo.src.large));
+  
+          if (availablePlaceholderImages.length > 0) {
+            let randomIndex = Math.floor(Math.random() * availablePlaceholderImages.length);
+            let imageUrl = availablePlaceholderImages[randomIndex].src.large;
+            fetchedImages.add(imageUrl);
+            return imageUrl;
           }
-          fetchedImages.add(imageUrl);
-          return imageUrl;
         }
       }
     } catch (error) {
       console.error('Error fetching image:', error);
     }
     return 'https://example.com/placeholder-image.jpg';
-  };
+  };  
   
-
       // Function to capitalize the first letter of a string
       const capitalizeFirstLetter = (string) => {
           return string.charAt(0).toUpperCase() + string.slice(1);
@@ -335,7 +343,7 @@ const LessonScreen = ({ navigation }) => {
                     'likedItems',
                     JSON.stringify(updatedStoredLikedItems)
                 );
-                testSavedData();
+                // testSavedData();
               } catch (error) {
                 console.error('Error saving liked item to AsyncStorage:', error);
               }
@@ -485,6 +493,7 @@ const LessonScreen = ({ navigation }) => {
       if (storedLikedItems) {
         const parsedLikedItems = JSON.parse(storedLikedItems);
         setLikedItemsFromStorage(parsedLikedItems);
+        setLikedItems(parsedLikedItems.map((item) => item.id)); // Initialize likedItems state
       }
     } catch (error) {
       console.error('Error retrieving liked items from AsyncStorage:', error);
@@ -496,9 +505,25 @@ const LessonScreen = ({ navigation }) => {
     fetchLikedItems();
   }, [activeTab]); // activeTab is a state variable that changes when you switch tabs
 
+  const customAnimationConfig = {
+    duration: 200, // Adjust the duration (in milliseconds) as needed
+    create: {
+      type: LayoutAnimation.Types.linear,
+      property: LayoutAnimation.Properties.opacity,
+    },
+    update: {
+      type: LayoutAnimation.Types.easeInEaseOut,
+    },
+  };
+  
+
   const toggleExpansion = (index) => {
+    // Use your custom animation configuration
+    LayoutAnimation.configureNext(customAnimationConfig);
     setExpandedItem(index === expandedItem ? null : index);
-  };  
+  };
+  
+  
   
     const renderItem = ({ item, index }) => {
         const isExpanded = index === expandedItem;
@@ -523,7 +548,7 @@ const LessonScreen = ({ navigation }) => {
           resizeMode="cover"
         >
         <LinearGradient
-            colors={['rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0.6)','rgba(0, 0, 0, 1)']} // Adjust the gradient colors as needed
+            colors={['rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0.6)','rgba(0, 0, 0, 0.9)']} // Adjust the gradient colors as needed
             style={styles.gradientContainer}>   
         </LinearGradient>  
           <View style={styles.contentContainer}>
@@ -662,22 +687,26 @@ const LessonScreen = ({ navigation }) => {
          
     )}  
       {vocabularyData.length > 0 && loadingMore ? (
-         <View style={styles.cardContainer}>
-            <View style={styles.likedContainer}> 
-            <FlatList
-              data={likedItemsFromStorage}
-              renderItem={renderItem}
-              keyExtractor={(item) => item.id.toString()}
-              showsVerticalScrollIndicator={false}
-              pagingEnabled={true}
-              // likedItems={likedItems}
-              // snapToAlignment="start"
-              decelerationRate={'fast'}
-            />
-
-            </View>
+        <View style={styles.cardContainer}>
+          <View style={styles.likedContainer}>
+            {likedItemsFromStorage.length > 0 ? (
+              <FlatList
+                data={likedItemsFromStorage}
+                renderItem={renderItem}
+                keyExtractor={(item) => item.id.toString()}
+                showsVerticalScrollIndicator={false}
+                pagingEnabled={true}
+                // likedItems={likedItems}
+                // snapToAlignment="start"
+                decelerationRate={'fast'}
+              />
+            ) : (
+              <Text style={styles.noLikedText}>Oops! Nothing here yet</Text>
+            )}
           </View>
-          ) : null}
+        </View>
+      ) : null}
+
           
       </ScrollView>
       <SafeAreaView style={styles.tabBar}>
@@ -851,6 +880,10 @@ const styles = StyleSheet.create({
     opacity: 0.6,
     
   },
+  noLikedText: {
+    color: '#fff',
+    fontSize: 18,
+  }
 });
 
 export default LessonScreen;
