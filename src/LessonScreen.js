@@ -33,7 +33,7 @@ const LessonScreen = ({ navigation }) => {
   
     const fetchRandomWordsAndImages = async () => {
       try {
-        const numberOfWords = 5;
+        const numberOfWords = 8;
     
         // Load your JSON file
         const vocabData = require('./lib/vocab.json');
@@ -516,7 +516,6 @@ const LessonScreen = ({ navigation }) => {
     },
   };
   
-
   const toggleExpansion = (index) => {
     // Use your custom animation configuration
     LayoutAnimation.configureNext(customAnimationConfig);
@@ -652,7 +651,7 @@ const LessonScreen = ({ navigation }) => {
         ref={scrollViewRef}
         // decelerationRate={1} 
         pagingEnabled
-        onMomentumScrollEnd={(event) => {
+        onScroll={(event) => {
           const pageIndex = Math.round(event.nativeEvent.contentOffset.x / Dimensions.get('window').width);
           activeTabIndexRef.current = pageIndex;
           setActiveTab(pageIndex);
@@ -675,7 +674,7 @@ const LessonScreen = ({ navigation }) => {
           // snapToAlignment="start"
           decelerationRate={'fast'} 
           onEndReached={fetchRandomWordsAndImages}
-          onEndReachedThreshold={0.2} // Adjust this value based on your preference 
+          onEndReachedThreshold={3} // Adjust this value based on your preference 
           ListFooterComponent={() => (
             <View style={{ marginTop: 5 }}>
               {loadingMore && vocabularyData.length > 0 ? (
@@ -828,7 +827,7 @@ const styles = StyleSheet.create({
   },
     
   pronunciation: {
-    fontSize: 20,
+    fontSize: 18,
     color: '#ccc',
 
   },
@@ -860,14 +859,14 @@ const styles = StyleSheet.create({
   },
   
   likeButton: {
-    marginBottom: 30,
+    marginBottom: 35,
   },
   shareButton: {
   },
   buttonText: {
     color: '#fff',
     fontSize: 16,
-    marginTop: 2,
+    marginTop: 5,
   },
   seeMoreLink: {
     position: 'absolute',
