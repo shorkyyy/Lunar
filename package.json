@@ -30,6 +30,8 @@
     "react-native-safe-area-context": "4.6.3",
     "react-native-screens": "~3.22.0",
     "react-native-tab-view": "^3.5.2",
+    "react-native-text-ticker": "^1.14.0",
+    "react-native-track-player": "^3.2.0",
     "wordnet-db": "^3.1.14"
   },
   "devDependencies": {

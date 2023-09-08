@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { View, FlatList, Text, StyleSheet, Dimensions, TouchableOpacity, ImageBackground, ScrollView, SafeAreaView, Animated, TouchableWithoutFeedback, ActivityIndicator, StatusBar, Share, LayoutAnimation, UIManager } from 'react-native';
+import { View, FlatList, Text, StyleSheet, Dimensions, TouchableOpacity, Image, ImageBackground, ScrollView, SafeAreaView, Animated, TouchableWithoutFeedback, ActivityIndicator, StatusBar, Share, LayoutAnimation, UIManager } from 'react-native';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import { createClient } from 'pexels';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -8,7 +8,7 @@ import { Audio } from 'expo-av';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
+import TextTicker from 'react-native-text-ticker'
 
 const tabs = ['For You', 'Liked']; // Customize your tabs
 const client = createClient('XoJwUYOzKMoDE3chOvLGeDqEoSdDtUNseGnCEnIQB4n2V3Te2lMlQLHS');
@@ -21,45 +21,33 @@ const LessonScreen = ({ navigation }) => {
     const [imageLoaded, setImageLoaded] = useState({});
     const [imageUrls, setImageUrls] = useState({});
     const [activeTab, setActiveTab] = useState(0);
-    const  activeTabIndexRef = useRef(0);
+    const activeTabIndexRef = useRef(0);
     const scrollViewRef = useRef(null);
     const [vocabularyData, setVocabularyData] = useState([]);
     const [loadingMore, setLoadingMore] = useState(false);
     const [overflowingItems, setOverflowingItems] = useState({});
     const [likedItemsFromStorage, setLikedItemsFromStorage] = useState([]);
+    const [newLikedItemsAdded, setNewLikedItemsAdded] = useState(false);
+    const [isPlaying, setIsPlaying] = useState(false);
+
     UIManager.setLayoutAnimationEnabledExperimental && UIManager.setLayoutAnimationEnabledExperimental(true);
-
-
   
     const fetchRandomWordsAndImages = async () => {
       try {
         const numberOfWords = 8;
     
-        // Load your JSON file
         const vocabData = require('./lib/vocab.json');
-    
-        // Extract all words from the JSON file
         const allWords = Object.values(vocabData).flat();
-    
-        // Shuffle the array to randomize the order of words
         const shuffledWords = shuffleArray(allWords);
-    
-        // Take the first 5 unique words from the shuffled array
-        const wordsToFetch = [];
-    
-        const isDuplicate = (word) => wordsToFetch.some((item) => item === word);
-    
+        const wordsToFetch = new Set();
         for (const word of shuffledWords) {
-          if (wordsToFetch.length >= numberOfWords) {
-            break; // Exit the loop if we already have enough words
+          if (wordsToFetch.size >= numberOfWords) {
+            break; 
           }
-    
-          if (!isDuplicate(word)) {
-            wordsToFetch.push(word);
-          }
+          wordsToFetch.add(word);
         }
     
-        const combinedFetchPromises = wordsToFetch.map(async (word) => {
+        const combinedFetchPromises = Array.from(wordsToFetch).map(async (word) => {
           try {
             const response = await axios.get(`https://wordsapiv1.p.rapidapi.com/words/${word}`, {
               headers: {
@@ -98,12 +86,10 @@ const LessonScreen = ({ navigation }) => {
                 audioUrl: audioUrl,
               };
             } else {
-              console.error(`No results found for word: ${word}`);
-              return null; // Skip this word
+              return null; 
             }
           } catch (error) {
-            console.error(`Error fetching word '${word}': ${error.message}`);
-            return null; // Skip this word
+            return null;
           }
         });
     
@@ -135,7 +121,7 @@ const LessonScreen = ({ navigation }) => {
         console.error('Error fetching random words and images:', error);
         await SplashScreen.hideAsync();
       }
-    };       
+    };        
     
     const fetchAudio = async (word) => {
       try {
@@ -144,15 +130,11 @@ const LessonScreen = ({ navigation }) => {
   
           if (phonetics && phonetics.length > 0 && phonetics[0].audio) {
               const audioUrl = phonetics[0].audio;
-  
-              // Preload the audio
               try {
                   const { sound } = await Audio.Sound.createAsync({ uri: audioUrl });
-                  // You can store the sound instance somewhere for later use
               } catch (error) {
                   console.error('Error preloading audio:', error);
               }
-  
               return audioUrl;
           } else {
               console.log('Pronunciation audio not available.');
@@ -164,41 +146,44 @@ const LessonScreen = ({ navigation }) => {
   };
   
   const placeholderWords = [
-    'landscape', 'city', 'sea', 'mountain', 'sky', 'Vintage product', 'japan shrine', 'mountain'
+    'landscape', 'sea', 'mountain', 'sky', 'Vintage product', 'Japan', 'mountain'
   ];
   
   const fetchedImages = new Set();
+  const usedQueries = new Set();
   
   const fetchImage = async (word) => {
     try {
-      const response = await client.photos.search({ query: word, per_page: 2 });
-      const photos = response.photos;
+      // Check if the given word has already been used as a search query
+      if (!usedQueries.has(word)) {
+        // Search for images using the given word
+        const response = await client.photos.search({ query: word, per_page: 1 });
+        const photos = response.photos;
+        usedQueries.add(word);
   
-      if (photos.length > 0) {
-        // Filter out images that have already been fetched
-        const availableImages = photos.filter((photo) => !fetchedImages.has(photo.src.large));
+        // Find the first available image
+        const availableImage = photos.find((photo) => !fetchedImages.has(photo.src.large));
   
-        if (availableImages.length > 0) {
-          let randomIndex = Math.floor(Math.random() * availableImages.length);
-          let imageUrl = availableImages[randomIndex].src.large;
+        if (availableImage) {
+          const imageUrl = availableImage.src.large;
           fetchedImages.add(imageUrl);
           return imageUrl;
         }
       }
   
       // If no photos were found or all were duplicates, try placeholder images
-      const shuffledPlaceholderWords = shuffleArray(placeholderWords.slice());
-      for (const placeholderWord of shuffledPlaceholderWords) {
-        const placeholderResponse = await client.photos.search({ query: placeholderWord, per_page: 3 });
-        const placeholderPhotos = placeholderResponse.photos;
+      for (const placeholderWord of placeholderWords) {
+        // Check if the placeholder word has already been used as a search query
+        if (!usedQueries.has(placeholderWord)) {
+          const placeholderResponse = await client.photos.search({ query: placeholderWord, per_page: 4 });
+          const placeholderPhotos = placeholderResponse.photos;
+          usedQueries.add(placeholderWord);
   
-        if (placeholderPhotos.length > 0) {
-          // Filter out placeholder images that have already been fetched
-          const availablePlaceholderImages = placeholderPhotos.filter((photo) => !fetchedImages.has(photo.src.large));
+          // Find the first available placeholder image
+          const availablePlaceholderImage = placeholderPhotos.find((photo) => !fetchedImages.has(photo.src.large));
   
-          if (availablePlaceholderImages.length > 0) {
-            let randomIndex = Math.floor(Math.random() * availablePlaceholderImages.length);
-            let imageUrl = availablePlaceholderImages[randomIndex].src.large;
+          if (availablePlaceholderImage) {
+            const imageUrl = availablePlaceholderImage.src.large;
             fetchedImages.add(imageUrl);
             return imageUrl;
           }
@@ -208,7 +193,8 @@ const LessonScreen = ({ navigation }) => {
       console.error('Error fetching image:', error);
     }
     return 'https://example.com/placeholder-image.jpg';
-  };  
+  };
+  
   
       // Function to capitalize the first letter of a string
       const capitalizeFirstLetter = (string) => {
@@ -216,17 +202,13 @@ const LessonScreen = ({ navigation }) => {
       };      
 
       const formatPartOfSpeech = (string) => {
-        if(string === 'noun') {
-          return 'n';
-        } else if (string === 'adjective') {
-          return 'adj';
-        } else if (string === 'adverb'){
-          return 'adv';
-        } else {
-          return 'v';
-        }
-      }
-        
+        const partsOfSpeech = {
+          noun: 'n',
+          adjective: 'adj',
+          adverb: 'adv'
+        };
+        return partsOfSpeech[string] || 'v';
+      }      
       // Function to shuffle an array
       const shuffleArray = (array) => {
         for (let i = array.length - 1; i > 0; i--) {
@@ -247,6 +229,10 @@ const LessonScreen = ({ navigation }) => {
               });
               activeTabIndexRef.current = index; // Update the activeTabIndexRef
               setActiveTab(index); // Update the state to trigger re-render
+
+              if (index === 1) {
+                setNewLikedItemsAdded(false);
+              }
             }
           }}
         >
@@ -257,9 +243,12 @@ const LessonScreen = ({ navigation }) => {
             {activeTabIndexRef.current === index && (
               <View style={styles.tabIndicator} />
             )}
+            {index === 1 && newLikedItemsAdded && (
+              <View style={styles.dot} />
+            )}
           </View>
         </TouchableWithoutFeedback>
-      );
+      );          
       
     const [likedItems, setLikedItems] = useState([]);
     const [lastTapTime, setLastTapTime] = useState(0);
@@ -290,6 +279,7 @@ const LessonScreen = ({ navigation }) => {
         if (tapPositionIsValid) {
           setCurrentLikedItem(item);
           setHeartAnimationActive(true); // Set animation active
+          setNewLikedItemsAdded(true);
           startHeartBeatAnimation();
     
           const index = vocabularyData.findIndex((data) => data.id === item.id);
@@ -331,19 +321,21 @@ const LessonScreen = ({ navigation }) => {
               try {
                 const storedLikedItems = await AsyncStorage.getItem('likedItems');
                 const parsedLikedItems = storedLikedItems ? JSON.parse(storedLikedItems) : [];
-        
+    
                 // Add imageUrl to the item before saving
                 const itemWithImageUrl = {
-                    ...item,
-                    imageUrl: imageUrls[item.id],   // Assign the imageUrl for the current item
+                  ...item,
+                  imageUrl: imageUrls[item.id],   // Assign the imageUrl for the current item
                 };
-        
+    
                 const updatedStoredLikedItems = [...parsedLikedItems, itemWithImageUrl];
                 await AsyncStorage.setItem(
-                    'likedItems',
-                    JSON.stringify(updatedStoredLikedItems)
+                  'likedItems',
+                  JSON.stringify(updatedStoredLikedItems)
                 );
-                // testSavedData();
+    
+                // Set newLikedItemsAdded to true
+                // setNewLikedItemsAdded(true);
               } catch (error) {
                 console.error('Error saving liked item to AsyncStorage:', error);
               }
@@ -353,7 +345,8 @@ const LessonScreen = ({ navigation }) => {
       }
     
       setLastTapTime(currentTime);
-    };    
+    };
+      
    
   const heartBeatValue = useState(new Animated.Value(1))[0];
 
@@ -371,79 +364,62 @@ const LessonScreen = ({ navigation }) => {
       }),
     ]).start();
   };
-
-  // const testSavedData = async () => {
-  //   try {
-  //     const savedData = await AsyncStorage.getItem('likedItems');
-  //     if (savedData) {
-  //       console.log('Saved Data:', JSON.parse(savedData));
-  //     } else {
-  //       console.log('No data saved in AsyncStorage.');
-  //     }
-  //   } catch (error) {
-  //     console.error('Error retrieving saved data from AsyncStorage:', error);
-  //   }
-  // };
+  const toggleLike = async (item) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    const isLiked = likedItems.includes(item.id);
   
-
-    const toggleLike = async (item) => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      const isLiked = likedItems.includes(item.id);
-    
-      if (isLiked) {
-        // Remove the item from the likedItems array
-        const updatedLikedItems = likedItems.filter((id) => id !== item.id);
-        setLikedItems(updatedLikedItems);
-    
-        // Remove the item from AsyncStorage
-        try {
-          const storedLikedItems = await AsyncStorage.getItem('likedItems');
-          if (storedLikedItems) {
-            const parsedLikedItems = JSON.parse(storedLikedItems);
-            const updatedStoredLikedItems = parsedLikedItems.filter(
-              (storedItem) => storedItem.id !== item.id
-            );
-            await AsyncStorage.setItem(
-              'likedItems',
-              JSON.stringify(updatedStoredLikedItems)
-            );
-    
-            // // Test if data is saved
-            // testSavedData();
-          }
-        } catch (error) {
-          console.error('Error removing liked item from AsyncStorage:', error);
-        }
-      } else {
-        startHeartBeatAnimation();
-        setLikedItems([...likedItems, item.id]);
-    
-        // Save the item to AsyncStorage with imageUrl
-        try {
-          const storedLikedItems = await AsyncStorage.getItem('likedItems');
-          const parsedLikedItems = storedLikedItems ? JSON.parse(storedLikedItems) : [];
-    
-          // Add imageUrl to the item before saving
-          const itemWithImageUrl = {
-            ...item,
-            imageUrl: imageUrls[item.id],
-          };
-    
-          const updatedStoredLikedItems = [...parsedLikedItems, itemWithImageUrl];
+    if (isLiked) {
+      // Remove the item from the likedItems array
+      const updatedLikedItems = likedItems.filter((id) => id !== item.id);
+      setLikedItems(updatedLikedItems);
+  
+      // Remove the item from AsyncStorage
+      try {
+        const storedLikedItems = await AsyncStorage.getItem('likedItems');
+        if (storedLikedItems) {
+          const parsedLikedItems = JSON.parse(storedLikedItems);
+          const updatedStoredLikedItems = parsedLikedItems.filter(
+            (storedItem) => storedItem.id !== item.id
+          );
           await AsyncStorage.setItem(
             'likedItems',
             JSON.stringify(updatedStoredLikedItems)
           );
-    
-          // Test if data is saved
-          // testSavedData();
-        } catch (error) {
-          console.error('Error saving liked item to AsyncStorage:', error);
+  
+          // Set newLikedItemsAdded to true
+          setNewLikedItemsAdded(true);
         }
+      } catch (error) {
+        console.error('Error removing liked item from AsyncStorage:', error);
       }
-    };
+    } else {
+      startHeartBeatAnimation();
+      setLikedItems([...likedItems, item.id]);
   
+      // Save the item to AsyncStorage with imageUrl
+      try {
+        const storedLikedItems = await AsyncStorage.getItem('likedItems');
+        const parsedLikedItems = storedLikedItems ? JSON.parse(storedLikedItems) : [];
   
+        // Add imageUrl to the item before saving
+        const itemWithImageUrl = {
+          ...item,
+          imageUrl: imageUrls[item.id],
+        };
+  
+        const updatedStoredLikedItems = [...parsedLikedItems, itemWithImageUrl];
+        await AsyncStorage.setItem(
+          'likedItems',
+          JSON.stringify(updatedStoredLikedItems)
+        );
+  
+        // Set newLikedItemsAdded to true
+        setNewLikedItemsAdded(true);
+      } catch (error) {
+        console.error('Error saving liked item to AsyncStorage:', error);
+      }
+    }
+  };  
     const shareWord = (word, pronunciation, meaning, partOfSpeech) => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)
       Share.share({
@@ -476,7 +452,6 @@ const LessonScreen = ({ navigation }) => {
   };
   const handleTextLayout = (event, index) => {
     const { lines } = event.nativeEvent;
- 
     const isOverflowing = lines.length > 2;
   
     // Store the overflow state for the current item
@@ -500,7 +475,6 @@ const LessonScreen = ({ navigation }) => {
     }
   };
 
-  // Call the fetchLikedItems function whenever you switch to the "Liked" tab or in componentDidMount
   useEffect(() => {
     fetchLikedItems();
   }, [activeTab]); // activeTab is a state variable that changes when you switch tabs
@@ -522,8 +496,81 @@ const LessonScreen = ({ navigation }) => {
     setExpandedItem(index === expandedItem ? null : index);
   };
   
+  const [sound, setSound] = useState(null);
+  const [songName, setSongName] = useState('');
+  const [artistName, setArtistName] = useState('');
+  const [albumArt, setAlbumArt] = useState('');
+
+  const JAMENDO_API_KEY = 'aa92f003'; // Use your Client ID here
+  const keyword = 'lofi';
+  const maxOffset = 50; // Set the maximum offset value
+  
+  // Define a function to load and play music from Jamendo
+  async function loadMusicFromJamendo() {
+    try {
+      // Generate a random offset value
+      const offset = Math.floor(Math.random() * maxOffset);
+  
+      // Update the JAMENDO_ENDPOINT to include the random offset value
+      const JAMENDO_ENDPOINT = `https://api.jamendo.com/v3.0/tracks/?client_id=${JAMENDO_API_KEY}&limit=1&format=jsonpretty&search=${keyword}&offset=${offset}`;
+  
+      const response = await axios.get(JAMENDO_ENDPOINT);
+      const track = response.data.results[0];
+  
+      if (track && track.audio) {
+        const { sound } = await Audio.Sound.createAsync({ uri: track.audio });
+        setSound(sound);
+        await sound.playAsync();
+  
+        // Get the song name, artist name, and album art
+        const songName = track.name;
+        const artistName = track.artist_name;
+        const albumArtUrl = track.image;
+  
+        // Update the songName and artistName state variables
+        setSongName(songName);
+        setArtistName(artistName);
+        setAlbumArt(albumArtUrl);
+  
+        // Add an event listener to detect when the current song ends
+        sound.setOnPlaybackStatusUpdate(async (status) => {
+          if (status.didJustFinish) {
+            // If the song ended, load and play a new song
+            await loadMusicFromJamendo();
+          }
+        });
+      } else {
+        console.error('No audio track found in Jamendo response.');
+      }
+    } catch (error) {
+      console.error('Error fetching track from Jamendo:', error);
+    }
+  }
   
   
+  async function pauseMusic() {
+    if (sound) {
+      if (isPlaying) {
+        await sound.pauseAsync();
+      } else {
+        await sound.playAsync();
+      }
+      setIsPlaying(!isPlaying); // Toggle the state
+    }
+  }  
+
+  useEffect(() => {
+    return sound
+      ? () => {
+          sound.unloadAsync(); 
+        }
+      : undefined;
+  }, [sound]);
+
+  useEffect(() => {
+    loadMusicFromJamendo();
+}, []);
+
     const renderItem = ({ item, index }) => {
         const isExpanded = index === expandedItem;
         const isLiked = likedItems.includes(item.id);
@@ -532,7 +579,6 @@ const LessonScreen = ({ navigation }) => {
         const shouldShowMoreButton = isOverflowing && !isExpanded;
         const isForYouTab = activeTab === 0; // Assuming 0 represents the "For You" tab
         const imageSource = isForYouTab ? imageUrls[item.id] : item.imageUrl;
-        
         
     return (
       <View style={styles.cardContainer}>
@@ -591,6 +637,12 @@ const LessonScreen = ({ navigation }) => {
             </TouchableOpacity>
           )}
         </View>
+        <View style={styles.currentSongContainer}>
+            <Icon name="music" size={16} color="#ccc" style={styles.musicNoteIcon} />
+            <TextTicker duration={20500} numberOfLines={1} style={styles.currentSongText}>
+              {`${songName} - ${artistName}`}
+            </TextTicker>
+          </View>
 
           <View style={styles.sideButtonContainer}>
             <TouchableOpacity
@@ -621,6 +673,18 @@ const LessonScreen = ({ navigation }) => {
                 <Text style={styles.buttonText}>Share</Text>
               </View>
             </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.discButton}
+              onPress={pauseMusic}
+            >
+              <View style={styles.iconTextContainer}>
+                <Image style={styles.discImage} source={require('./img/disc.png') }></Image>
+                <Image
+                  style={styles.albumImage}
+                  source={albumArt ? { uri: albumArt } : null}
+                />
+              </View>
+            </TouchableOpacity>
             </View>
             {currentLikedItem && currentLikedItem.id === item.id && (
                      <Animated.View
@@ -645,18 +709,20 @@ const LessonScreen = ({ navigation }) => {
 
   return (
     <View style={styles.container}>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        ref={scrollViewRef}
-        // decelerationRate={1} 
-        pagingEnabled
-        onScroll={(event) => {
-          const pageIndex = Math.round(event.nativeEvent.contentOffset.x / Dimensions.get('window').width);
-          activeTabIndexRef.current = pageIndex;
-          setActiveTab(pageIndex);
-        }}
-      >
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      ref={scrollViewRef}
+      pagingEnabled
+      onMomentumScrollEnd={(event) => {
+        const pageIndex = Math.round(event.nativeEvent.contentOffset.x / Dimensions.get('window').width);
+        activeTabIndexRef.current = pageIndex;
+        setActiveTab(pageIndex);
+        if (pageIndex === 1) {
+          setNewLikedItemsAdded(false);
+        }
+      }}
+    >
       {vocabularyData.length === 0 && loadingMore ? ( // Check if data is loading and no items are available
         <View style={styles.activityIndicatorContainer}>
           <ActivityIndicator size="large" color="#fff" />
@@ -671,7 +737,6 @@ const LessonScreen = ({ navigation }) => {
           keyExtractor={(item) => item.id.toString()}
           showsVerticalScrollIndicator={false}
           pagingEnabled={true}
-          // snapToAlignment="start"
           decelerationRate={'fast'} 
           onEndReached={fetchRandomWordsAndImages}
           onEndReachedThreshold={3} // Adjust this value based on your preference 
@@ -695,12 +760,10 @@ const LessonScreen = ({ navigation }) => {
                 keyExtractor={(item) => item.id.toString()}
                 showsVerticalScrollIndicator={false}
                 pagingEnabled={true}
-                // likedItems={likedItems}
-                // snapToAlignment="start"
                 decelerationRate={'fast'}
               />
             ) : (
-              <Text style={styles.noLikedText}>Oops! Nothing here yet</Text>
+              <Text style={styles.noLikedText}>Oops! Nothing here yet 🙁</Text>
             )}
           </View>
         </View>
@@ -735,7 +798,7 @@ const styles = StyleSheet.create({
   tabText: {
     fontWeight: 'bold',
     fontSize: 18,
-    color: 'rgba(204, 204, 204, 0.6)', // Adjust the alpha value (0.7 in this example)
+    color: 'rgba(204, 204, 204, 0.6)', 
   },
   activeTab: {
   },
@@ -748,12 +811,22 @@ const styles = StyleSheet.create({
     position: 'absolute',
     marginTop: 30,
     borderRadius: 2,
-    borderBottomWidth: 3, // Adjust the thickness of the line as needed
-    borderBottomColor: '#fff', // Change the color of the line as needed
+    borderBottomWidth: 3, 
+    borderBottomColor: '#fff', 
     width: 35,
-    alignSelf: 'center', // Center the line horizontally
+    alignSelf: 'center', 
   },
-  
+  dot: {
+    position: 'absolute',
+    borderRadius: 2,
+    top: 0, 
+    right: 4,
+    width: 8,
+    height: 8,
+    backgroundColor: '#FF6B6B',
+    borderRadius: 4,
+  },
+    
   activityIndicatorContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -797,18 +870,18 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: '30%',
+    height: '33%',
   },
   contentContainer: {
     flex: 1,
-    flexDirection: 'column', // Arrange items vertically
-    justifyContent: 'flex-end', // Align items to the bottom
-    alignItems: 'flex-start', // Align items to the start (left)
-    bottom: 80,
-    left: 20,
+    flexDirection: 'column', 
+    justifyContent: 'flex-end', 
+    alignItems: 'flex-start',
+    bottom: 75,
+    left: 15,
   },
   word: {
-    fontSize: 30,
+    fontSize: 28,
     fontWeight: 'bold',
     color: '#fff',
   },
@@ -819,8 +892,8 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   wordContainer: {
-    flexDirection: 'row', // Arrange items horizontally
-    alignItems: 'center', // Center items vertically
+    flexDirection: 'row',
+    alignItems: 'center', 
   },
   speakerIcon: {
     marginLeft: 10,
@@ -828,27 +901,41 @@ const styles = StyleSheet.create({
     
   pronunciation: {
     fontSize: 18,
-    color: '#ccc',
+    color: '#fff',
 
   },
   meaningContainer:{
-    flexDirection: 'row', // Arrange items vertically
-    bottom: 50,
-    left: 20,
-    // alignSelf: 'flex-start',
-    // marginRight: 5,
+    flexDirection: 'row', 
+    bottom: 40,
+    left: 15,
     width: 250,
   },
   meaning: {
     flex: 1,
     fontSize: 18,
     color: '#ccc',
-    // marginRight: 14,
+  },
+  currentSongContainer: {
+    flexDirection: 'row', 
+    alignItems: 'center',
+    bottom: 40,
+    left: 15,
+    marginTop: 10, 
+    opacity: 0.8,
+  },
+  musicNoteIcon: {
+    marginRight: 10,
+  },
+  currentSongText: {
+    fontSize: 18,
+    color: '#ccc', // White color
+    width: 270,
+    opacity: 0.8,
   },
   sideButtonContainer: {
     position: 'absolute',
-    bottom: 50,
-    right: 20,
+    bottom: 40,
+    right: 15,
     flexDirection: 'column',
     alignItems: 'flex-end',
     alignContent: 'flex-end',
@@ -859,9 +946,24 @@ const styles = StyleSheet.create({
   },
   
   likeButton: {
-    marginBottom: 35,
   },
   shareButton: {
+    marginTop: 30,
+  },
+  discButton: {
+    marginTop: 30,
+  },
+  discImage: {
+    width: 50, 
+    height: 50, 
+  },
+  albumImage: {
+    position: 'absolute',
+    top: 8,
+    left: 7.2,
+    width: 35, 
+    height: 35, 
+    borderRadius: 35,
   },
   buttonText: {
     color: '#fff',
@@ -870,13 +972,13 @@ const styles = StyleSheet.create({
   },
   seeMoreLink: {
     position: 'absolute',
+    // fontWeight: 'bold',
     bottom: 0,
-    // left: 5,
+    left: 0,
     paddingHorizontal: 5,
-    // alignSelf: 'flex-end',
     color: '#ccc',
     fontSize: 18,
-    opacity: 0.6,
+    opacity: 0.8,
     
   },
   noLikedText: {
