@@ -28,13 +28,32 @@ const LessonScreen = ({ navigation }) => {
     const [overflowingItems, setOverflowingItems] = useState({});
     const [likedItemsFromStorage, setLikedItemsFromStorage] = useState([]);
     const [newLikedItemsAdded, setNewLikedItemsAdded] = useState(false);
-    const [isPlaying, setIsPlaying] = useState(false);
+    const [isPlaying, setIsPlaying] = useState(true);
+    const [maxCachedImages] = useState(50); // Set your desired maximum cache limit
+    const [cachedImageUrls, setCachedImageUrls] = useState({}); // Cache for image URLs
+  
+    const cacheImageUrl = (id, imageUrl) => {
+      setCachedImageUrls((prevCache) => {
+        const updatedCache = { ...prevCache, [id]: imageUrl };
+        const keys = Object.keys(updatedCache);
+        if (keys.length > maxCachedImages) {
+          // Remove the oldest item to maintain the cache limit
+          delete updatedCache[keys[0]];
+        }
+        return updatedCache;
+      });
+    };
+
+    const onImageLoad = (id, imageUrl) => {
+      cacheImageUrl(id, imageUrl);
+      setImageLoaded((prevLoaded) => ({ ...prevLoaded, [id]: true }));
+    };
 
     UIManager.setLayoutAnimationEnabledExperimental && UIManager.setLayoutAnimationEnabledExperimental(true);
   
     const fetchRandomWordsAndImages = async () => {
       try {
-        const numberOfWords = 8;
+        const numberOfWords = 5;
     
         const vocabData = require('./lib/vocab.json');
         const allWords = Object.values(vocabData).flat();
@@ -146,55 +165,85 @@ const LessonScreen = ({ navigation }) => {
   };
   
   const placeholderWords = [
-    'landscape', 'sea', 'mountain', 'sky', 'Vintage product', 'Japan', 'mountain'
-  ];
+    'serenity', 'elegance', 'innovation', 'blossom', 'grace', 'inspiration'
+  ];  
   
   const fetchedImages = new Set();
   const usedQueries = new Set();
   
   const fetchImage = async (word) => {
     try {
-      // Check if the given word has already been used as a search query
-      if (!usedQueries.has(word)) {
-        // Search for images using the given word
-        const response = await client.photos.search({ query: word, per_page: 1 });
-        const photos = response.photos;
-        usedQueries.add(word);
+      // Check if the image URL is already cached
+      if (cachedImageUrls[word]) {
+        return cachedImageUrls[word];
+      }
   
-        // Find the first available image
-        const availableImage = photos.find((photo) => !fetchedImages.has(photo.src.large));
+      // Search for images using the given word
+      const response = await client.photos.search({ query: word, per_page: 4 });
+      const photos = response.photos;
   
-        if (availableImage) {
-          const imageUrl = availableImage.src.large;
-          fetchedImages.add(imageUrl);
-          return imageUrl;
-        }
+      // Find the first available image that is not in fetchedImages
+      const availableImage = photos.find((photo) => !fetchedImages.has(photo.src.large));
+  
+      if (availableImage) {
+        const imageUrl = availableImage.src.large;
+        fetchedImages.add(imageUrl);
+  
+        // After successfully fetching the image URL, cache it
+        cacheImageUrl(word, imageUrl);
+  
+        return imageUrl;
       }
   
       // If no photos were found or all were duplicates, try placeholder images
-      for (const placeholderWord of placeholderWords) {
-        // Check if the placeholder word has already been used as a search query
-        if (!usedQueries.has(placeholderWord)) {
-          const placeholderResponse = await client.photos.search({ query: placeholderWord, per_page: 4 });
-          const placeholderPhotos = placeholderResponse.photos;
-          usedQueries.add(placeholderWord);
+      // Shuffle the placeholderWords array to avoid using the same word repeatedly
+      const shuffledWords = shuffleArray(placeholderWords);
   
-          // Find the first available placeholder image
-          const availablePlaceholderImage = placeholderPhotos.find((photo) => !fetchedImages.has(photo.src.large));
+      for (const placeholderWord of shuffledWords) {
+        // Reset usedQueries Set for each placeholder word
+        usedQueries.clear();
   
-          if (availablePlaceholderImage) {
-            const imageUrl = availablePlaceholderImage.src.large;
-            fetchedImages.add(imageUrl);
-            return imageUrl;
-          }
+        const placeholderResponse = await client.photos.search({ query: placeholderWord, per_page: 4 });
+        const placeholderPhotos = placeholderResponse.photos;
+  
+        // Find the first available placeholder image that is not in fetchedImages
+        const availablePlaceholderImage = placeholderPhotos.find((photo) => !fetchedImages.has(photo.src.large));
+  
+        if (availablePlaceholderImage) {
+          const imageUrl = availablePlaceholderImage.src.large;
+          fetchedImages.add(imageUrl);
+  
+          // After successfully fetching the image URL, cache it
+          cacheImageUrl(word, imageUrl);
+  
+          return imageUrl;
         }
       }
     } catch (error) {
       console.error('Error fetching image:', error);
     }
-    return 'https://example.com/placeholder-image.jpg';
-  };
   
+    return 'https://example.com/placeholder-image.jpg'; // Default placeholder image URL
+  };  
+  
+  // A helper function to shuffle an array using the Fisher-Yates algorithm
+  const shuffleArray = (array) => {
+    let currentIndex = array.length, randomIndex;
+  
+    // While there remain elements to shuffle...
+    while (currentIndex != 0) {
+  
+      // Pick a remaining element...
+      randomIndex = Math.floor(Math.random() * currentIndex);
+      currentIndex--;
+  
+      // And swap it with the current element.
+      [array[currentIndex], array[randomIndex]] = [
+        array[randomIndex], array[currentIndex]];
+    }
+  
+    return array;
+  };  
   
       // Function to capitalize the first letter of a string
       const capitalizeFirstLetter = (string) => {
@@ -209,14 +258,6 @@ const LessonScreen = ({ navigation }) => {
         };
         return partsOfSpeech[string] || 'v';
       }      
-      // Function to shuffle an array
-      const shuffleArray = (array) => {
-        for (let i = array.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [array[i], array[j]] = [array[j], array[i]];
-        }
-        return array;
-      };
       
       const renderTab = (tab, index) => (
         <TouchableWithoutFeedback
@@ -503,50 +544,61 @@ const LessonScreen = ({ navigation }) => {
 
   const JAMENDO_API_KEY = 'aa92f003'; // Use your Client ID here
   const keyword = 'lofi';
-  const maxOffset = 50; // Set the maximum offset value
-  
+  const maxOffset = 5; // Set the maximum offset value
+  const playedSongs = []; // Array to keep track of played songs
+
   // Define a function to load and play music from Jamendo
-  async function loadMusicFromJamendo() {
-    try {
-      // Generate a random offset value
-      const offset = Math.floor(Math.random() * maxOffset);
-  
-      // Update the JAMENDO_ENDPOINT to include the random offset value
-      const JAMENDO_ENDPOINT = `https://api.jamendo.com/v3.0/tracks/?client_id=${JAMENDO_API_KEY}&limit=1&format=jsonpretty&search=${keyword}&offset=${offset}`;
-  
-      const response = await axios.get(JAMENDO_ENDPOINT);
-      const track = response.data.results[0];
-  
-      if (track && track.audio) {
-        const { sound } = await Audio.Sound.createAsync({ uri: track.audio });
-        setSound(sound);
-        await sound.playAsync();
-  
-        // Get the song name, artist name, and album art
-        const songName = track.name;
-        const artistName = track.artist_name;
-        const albumArtUrl = track.image;
-  
-        // Update the songName and artistName state variables
-        setSongName(songName);
-        setArtistName(artistName);
-        setAlbumArt(albumArtUrl);
-  
-        // Add an event listener to detect when the current song ends
-        sound.setOnPlaybackStatusUpdate(async (status) => {
-          if (status.didJustFinish) {
-            // If the song ended, load and play a new song
-            await loadMusicFromJamendo();
-          }
-        });
-      } else {
-        console.error('No audio track found in Jamendo response.');
+  async function loadRandomMusicFromJamendo() {
+    let track = null;
+
+    while (!track) {
+      try {
+        // Generate a random offset value
+        const offset = Math.floor(Math.random() * maxOffset);
+
+        // Update the JAMENDO_ENDPOINT to include the random offset value
+        const JAMENDO_ENDPOINT = `https://api.jamendo.com/v3.0/tracks/?client_id=${JAMENDO_API_KEY}&limit=1&format=jsonpretty&search=${keyword}&offset=${offset}`;
+
+        const response = await axios.get(JAMENDO_ENDPOINT);
+        if (response.data.results.length === 0) {
+          // No songs found for the given keyword
+          console.error(`No songs found for keyword: ${keyword}`);
+          break;
+        }
+        track = response.data.results[0];
+
+        if (track && track.audio && !playedSongs.includes(track.id)) {
+          playedSongs.push(track.id); // Add the song id to the playedSongs array
+
+          const { sound } = await Audio.Sound.createAsync({ uri: track.audio });
+          setSound(sound);
+          await sound.playAsync();
+
+          // Get the song name, artist name, and album art
+          const songName = track.name;
+          const artistName = track.artist_name;
+          const albumArtUrl = track.image;
+
+          // Update the songName and artistName state variables
+          setSongName(songName);
+          setArtistName(artistName);
+          setAlbumArt(albumArtUrl);
+
+          // Add an event listener to detect when the current song ends
+          sound.setOnPlaybackStatusUpdate(async (status) => {
+            if (status.didJustFinish) {
+              // If the song ended, load and play a new random song
+              await loadRandomMusicFromJamendo();
+            }
+          });
+        } else {
+          console.error('No audio track found in Jamendo response or song already played. Retrying...');
+        }
+      } catch (error) {
+        console.error('Error fetching track from Jamendo:', error);
       }
-    } catch (error) {
-      console.error('Error fetching track from Jamendo:', error);
     }
   }
-  
   
   async function pauseMusic() {
     if (sound) {
@@ -568,7 +620,7 @@ const LessonScreen = ({ navigation }) => {
   }, [sound]);
 
   useEffect(() => {
-    loadMusicFromJamendo();
+    loadRandomMusicFromJamendo();
 }, []);
 
     const renderItem = ({ item, index }) => {
@@ -593,7 +645,7 @@ const LessonScreen = ({ navigation }) => {
           resizeMode="cover"
         >
         <LinearGradient
-            colors={['rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0.6)','rgba(0, 0, 0, 0.9)']} // Adjust the gradient colors as needed
+            colors={['rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0.5)','rgba(0, 0, 0, 0.8)']} // Adjust the gradient colors as needed
             style={styles.gradientContainer}>   
         </LinearGradient>  
           <View style={styles.contentContainer}>
@@ -606,7 +658,7 @@ const LessonScreen = ({ navigation }) => {
                         </TouchableOpacity>
                     ) : (
                         <View style={styles.disabledSpeakerIcon}>
-                            <Icon name="volume-up" size={25} color="#999" style={styles.speakerIcon} />
+                            <Icon name="volume-up" size={25} color="#888" style={styles.speakerIcon} />
                         </View>
                     )}
             </View>
@@ -614,7 +666,7 @@ const LessonScreen = ({ navigation }) => {
           </View>
           <View style={styles.meaningContainer}>
           <Text
-            numberOfLines={isExpanded ? 6 : 2}
+            numberOfLines={isExpanded ? 8 : 2}
             style={styles.meaning}
             onTextLayout={(event) => handleTextLayout(event, index)}
           >
@@ -638,7 +690,7 @@ const LessonScreen = ({ navigation }) => {
           )}
         </View>
         <View style={styles.currentSongContainer}>
-            <Icon name="music" size={16} color="#ccc" style={styles.musicNoteIcon} />
+            <Icon name="music" size={18} color="rgba(136, 136, 136, 0.8)" style={styles.musicNoteIcon} />
             <TextTicker duration={20500} numberOfLines={1} style={styles.currentSongText}>
               {`${songName} - ${artistName}`}
             </TextTicker>
@@ -657,7 +709,7 @@ const LessonScreen = ({ navigation }) => {
                 >
                   <Icon
                     name="heart"
-                    size={30}
+                    size={28}
                     color={isLiked ? '#FF6B6B' : '#fff'}
                   />
                 </Animated.View>
@@ -669,7 +721,7 @@ const LessonScreen = ({ navigation }) => {
               onPress={() => shareWord(item.word, item.pronunciation, item.meaning, item.partOfSpeech)}
             >
               <View style={styles.iconTextContainer}>
-                <Icon name="share" size={30} color="#fff" />
+                <Icon name="paper-plane" size={28} color="#fff" />
                 <Text style={styles.buttonText}>Share</Text>
               </View>
             </TouchableOpacity>
@@ -739,7 +791,7 @@ const LessonScreen = ({ navigation }) => {
           pagingEnabled={true}
           decelerationRate={'fast'} 
           onEndReached={fetchRandomWordsAndImages}
-          onEndReachedThreshold={3} // Adjust this value based on your preference 
+          onEndReachedThreshold={5} // Adjust this value based on your preference 
           ListFooterComponent={() => (
             <View style={{ marginTop: 5 }}>
               {loadingMore && vocabularyData.length > 0 ? (
@@ -793,12 +845,12 @@ const styles = StyleSheet.create({
     right: 0,
   },
   tab: {
-    paddingHorizontal: 15,
+    paddingHorizontal: 18,
   },
   tabText: {
     fontWeight: 'bold',
     fontSize: 18,
-    color: 'rgba(204, 204, 204, 0.6)', 
+    color: 'rgba(204, 204, 204, 0.8)', 
   },
   activeTab: {
   },
@@ -809,9 +861,9 @@ const styles = StyleSheet.create({
   },
   tabIndicator: {
     position: 'absolute',
-    marginTop: 30,
+    marginTop: 28,
     borderRadius: 2,
-    borderBottomWidth: 3, 
+    borderBottomWidth: 4, 
     borderBottomColor: '#fff', 
     width: 35,
     alignSelf: 'center', 
@@ -870,18 +922,18 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: '33%',
+    height: '32%',
   },
   contentContainer: {
     flex: 1,
     flexDirection: 'column', 
     justifyContent: 'flex-end', 
     alignItems: 'flex-start',
-    bottom: 75,
+    bottom: 40,
     left: 15,
   },
   word: {
-    fontSize: 28,
+    fontSize: 30,
     fontWeight: 'bold',
     color: '#fff',
   },
@@ -905,10 +957,11 @@ const styles = StyleSheet.create({
 
   },
   meaningContainer:{
+    marginTop: 20,
     flexDirection: 'row', 
     bottom: 40,
     left: 15,
-    width: 250,
+    width: 270,
   },
   meaning: {
     flex: 1,
@@ -920,7 +973,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     bottom: 40,
     left: 15,
-    marginTop: 10, 
+    marginTop: 5, 
     opacity: 0.8,
   },
   musicNoteIcon: {
@@ -928,8 +981,8 @@ const styles = StyleSheet.create({
   },
   currentSongText: {
     fontSize: 18,
-    color: '#ccc', // White color
-    width: 270,
+    color: '#888', // White color
+    width: 290,
     opacity: 0.8,
   },
   sideButtonContainer: {
@@ -948,10 +1001,11 @@ const styles = StyleSheet.create({
   likeButton: {
   },
   shareButton: {
-    marginTop: 30,
+    marginTop: 32,
   },
   discButton: {
-    marginTop: 30,
+    marginTop: 32,
+    // bottom: 3,
   },
   discImage: {
     width: 50, 
@@ -959,31 +1013,29 @@ const styles = StyleSheet.create({
   },
   albumImage: {
     position: 'absolute',
-    top: 8,
-    left: 7.2,
-    width: 35, 
-    height: 35, 
+    top: 12,
+    left: 12,
+    width: 25, 
+    height: 25, 
     borderRadius: 35,
   },
   buttonText: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 15,
     marginTop: 5,
   },
   seeMoreLink: {
     position: 'absolute',
-    // fontWeight: 'bold',
     bottom: 0,
     left: 0,
     paddingHorizontal: 5,
-    color: '#ccc',
-    fontSize: 18,
+    color: '#888',
+    fontSize: 16,
     opacity: 0.8,
-    
   },
   noLikedText: {
     color: '#fff',
-    fontSize: 18,
+    fontSize: 16,
   }
 });
 
