@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { View, FlatList, Text, StyleSheet, Dimensions, TouchableOpacity, Image, ImageBackground, ScrollView, SafeAreaView, Animated, TouchableWithoutFeedback, ActivityIndicator, StatusBar, Share, LayoutAnimation, UIManager } from 'react-native';
+import { View, FlatList, Text, StyleSheet, Dimensions, TouchableOpacity, Image, ImageBackground, ScrollView, SafeAreaView, Animated, TouchableWithoutFeedback, ActivityIndicator, StatusBar, Share, LayoutAnimation, UIManager, Easing } from 'react-native';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import { createClient } from 'pexels';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -10,7 +10,7 @@ import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import TextTicker from 'react-native-text-ticker'
 
-const tabs = ['For You', 'Liked']; // Customize your tabs
+const tabs = ['For You', 'Liked']; 
 const client = createClient('XoJwUYOzKMoDE3chOvLGeDqEoSdDtUNseGnCEnIQB4n2V3Te2lMlQLHS');
 SplashScreen.preventAutoHideAsync();
 
@@ -115,7 +115,6 @@ const LessonScreen = ({ navigation }) => {
         const combinedResponses = await Promise.all(combinedFetchPromises);
         const validResponses = combinedResponses.filter((response) => response !== null);
     
-        // Extract word details and image URLs
         const newVocabulary = validResponses.map((item) => {
           return {
             id: item.id,
@@ -127,7 +126,6 @@ const LessonScreen = ({ navigation }) => {
           };
         });
     
-        // Append the new words to the existing vocabulary data
         setVocabularyData((prevVocabularyData) => [...prevVocabularyData, ...newVocabulary]);
     
         const imageURLs = validResponses.reduce((acc, curr) => {
@@ -226,18 +224,14 @@ const LessonScreen = ({ navigation }) => {
     return 'https://example.com/placeholder-image.jpg'; // Default placeholder image URL
   };  
   
-  // A helper function to shuffle an array using the Fisher-Yates algorithm
   const shuffleArray = (array) => {
     let currentIndex = array.length, randomIndex;
   
-    // While there remain elements to shuffle...
     while (currentIndex != 0) {
   
-      // Pick a remaining element...
       randomIndex = Math.floor(Math.random() * currentIndex);
       currentIndex--;
-  
-      // And swap it with the current element.
+
       [array[currentIndex], array[randomIndex]] = [
         array[randomIndex], array[currentIndex]];
     }
@@ -298,6 +292,7 @@ const LessonScreen = ({ navigation }) => {
     const [heartPosition, setHeartPosition] = useState({ x: 0, y: 0 });
     const [currentLikedItem, setCurrentLikedItem] = useState(null);
     const [heartAnimationActive, setHeartAnimationActive] = useState(false);
+    const spinValue = useRef(new Animated.Value(0)).current;
 
     const handleDoubleTap = async (item, event) => {
       const currentTime = Date.now();
@@ -320,6 +315,7 @@ const LessonScreen = ({ navigation }) => {
         if (tapPositionIsValid) {
           setCurrentLikedItem(item);
           setHeartAnimationActive(true); // Set animation active
+          await AsyncStorage.setItem('newLikedItemsAdded', 'true');
           setNewLikedItemsAdded(true);
           startHeartBeatAnimation();
     
@@ -374,9 +370,6 @@ const LessonScreen = ({ navigation }) => {
                   'likedItems',
                   JSON.stringify(updatedStoredLikedItems)
                 );
-    
-                // Set newLikedItemsAdded to true
-                // setNewLikedItemsAdded(true);
               } catch (error) {
                 console.error('Error saving liked item to AsyncStorage:', error);
               }
@@ -394,13 +387,13 @@ const LessonScreen = ({ navigation }) => {
   const startHeartBeatAnimation = () => {
     Animated.sequence([
       Animated.timing(heartBeatValue, {
-        toValue: 1.3, // Increase the value to make it slightly bigger
-        duration: 150, // Duration of the first pulse
+        toValue: 1.3, 
+        duration: 150, 
         useNativeDriver: true,
       }),
       Animated.timing(heartBeatValue, {
-        toValue: 1, // Return to the original size
-        duration: 150, // Duration of the second pulse
+        toValue: 1, 
+        duration: 150, 
         useNativeDriver: true,
       }),
     ]).start();
@@ -410,11 +403,9 @@ const LessonScreen = ({ navigation }) => {
     const isLiked = likedItems.includes(item.id);
   
     if (isLiked) {
-      // Remove the item from the likedItems array
       const updatedLikedItems = likedItems.filter((id) => id !== item.id);
       setLikedItems(updatedLikedItems);
   
-      // Remove the item from AsyncStorage
       try {
         const storedLikedItems = await AsyncStorage.getItem('likedItems');
         if (storedLikedItems) {
@@ -426,9 +417,9 @@ const LessonScreen = ({ navigation }) => {
             'likedItems',
             JSON.stringify(updatedStoredLikedItems)
           );
-  
-          // Set newLikedItemsAdded to true
-          setNewLikedItemsAdded(true);
+
+          await AsyncStorage.setItem('newLikedItemsAdded', 'false');
+          setNewLikedItemsAdded(false);
         }
       } catch (error) {
         console.error('Error removing liked item from AsyncStorage:', error);
@@ -436,13 +427,9 @@ const LessonScreen = ({ navigation }) => {
     } else {
       startHeartBeatAnimation();
       setLikedItems([...likedItems, item.id]);
-  
-      // Save the item to AsyncStorage with imageUrl
       try {
         const storedLikedItems = await AsyncStorage.getItem('likedItems');
         const parsedLikedItems = storedLikedItems ? JSON.parse(storedLikedItems) : [];
-  
-        // Add imageUrl to the item before saving
         const itemWithImageUrl = {
           ...item,
           imageUrl: imageUrls[item.id],
@@ -455,6 +442,7 @@ const LessonScreen = ({ navigation }) => {
         );
   
         // Set newLikedItemsAdded to true
+        await AsyncStorage.setItem('newLikedItemsAdded', 'true');
         setNewLikedItemsAdded(true);
       } catch (error) {
         console.error('Error saving liked item to AsyncStorage:', error);
@@ -469,12 +457,9 @@ const LessonScreen = ({ navigation }) => {
       .then(result => {
         if (result.action === Share.sharedAction) {
           if (result.activityType) {
-            // Shared successfully
           } else {
-            // Shared successfully
           }
         } else if (result.action === Share.dismissedAction) {
-          // Dismissed sharing
         }
       })
       .catch(error => {
@@ -483,7 +468,6 @@ const LessonScreen = ({ navigation }) => {
     };    
     const playPronunciation = async (audioUrl) => {
       try {
-          // Play the preloaded audio
           const sound = new Audio.Sound();
           await sound.loadAsync({ uri: audioUrl });
           await sound.playAsync();
@@ -494,22 +478,20 @@ const LessonScreen = ({ navigation }) => {
   const handleTextLayout = (event, index) => {
     const { lines } = event.nativeEvent;
     const isOverflowing = lines.length > 2;
-  
-    // Store the overflow state for the current item
+    
     setOverflowingItems((prevOverflowingItems) => ({
       ...prevOverflowingItems,
       [index]: isOverflowing,
     }));
   };
-
-  // Create a function to fetch and update liked items from AsyncStorage
+  
   const fetchLikedItems = async () => {
     try {
       const storedLikedItems = await AsyncStorage.getItem('likedItems');
       if (storedLikedItems) {
         const parsedLikedItems = JSON.parse(storedLikedItems);
         setLikedItemsFromStorage(parsedLikedItems);
-        setLikedItems(parsedLikedItems.map((item) => item.id)); // Initialize likedItems state
+        setLikedItems(parsedLikedItems.map((item) => item.id)); 
       }
     } catch (error) {
       console.error('Error retrieving liked items from AsyncStorage:', error);
@@ -518,10 +500,26 @@ const LessonScreen = ({ navigation }) => {
 
   useEffect(() => {
     fetchLikedItems();
-  }, [activeTab]); // activeTab is a state variable that changes when you switch tabs
+  }, [activeTab]); 
+  
+  
+  useEffect(() => {
+    async function fetchDotState() {
+      try {
+        const dotState = await AsyncStorage.getItem('newLikedItemsAdded');
+        if (dotState !== null) {
+          setNewLikedItemsAdded(dotState === 'true');
+        }
+      } catch (error) {
+        console.error('Error fetching dot state from AsyncStorage:', error);
+      }
+    }
+
+    fetchDotState();
+  }, []);
 
   const customAnimationConfig = {
-    duration: 200, // Adjust the duration (in milliseconds) as needed
+    duration: 200, 
     create: {
       type: LayoutAnimation.Types.linear,
       property: LayoutAnimation.Properties.opacity,
@@ -532,7 +530,6 @@ const LessonScreen = ({ navigation }) => {
   };
   
   const toggleExpansion = (index) => {
-    // Use your custom animation configuration
     LayoutAnimation.configureNext(customAnimationConfig);
     setExpandedItem(index === expandedItem ? null : index);
   };
@@ -542,26 +539,22 @@ const LessonScreen = ({ navigation }) => {
   const [artistName, setArtistName] = useState('');
   const [albumArt, setAlbumArt] = useState('');
 
-  const JAMENDO_API_KEY = 'aa92f003'; // Use your Client ID here
+  const JAMENDO_API_KEY = 'aa92f003'; 
   const keyword = 'lofi';
-  const maxOffset = 5; // Set the maximum offset value
-  const playedSongs = []; // Array to keep track of played songs
+  const maxOffset = 5; 
+  const playedSongs = []; 
 
-  // Define a function to load and play music from Jamendo
   async function loadRandomMusicFromJamendo() {
     let track = null;
 
     while (!track) {
       try {
-        // Generate a random offset value
         const offset = Math.floor(Math.random() * maxOffset);
 
-        // Update the JAMENDO_ENDPOINT to include the random offset value
         const JAMENDO_ENDPOINT = `https://api.jamendo.com/v3.0/tracks/?client_id=${JAMENDO_API_KEY}&limit=1&format=jsonpretty&search=${keyword}&offset=${offset}`;
 
         const response = await axios.get(JAMENDO_ENDPOINT);
         if (response.data.results.length === 0) {
-          // No songs found for the given keyword
           console.error(`No songs found for keyword: ${keyword}`);
           break;
         }
@@ -569,21 +562,24 @@ const LessonScreen = ({ navigation }) => {
 
         if (track && track.audio && !playedSongs.includes(track.id)) {
           playedSongs.push(track.id); // Add the song id to the playedSongs array
-
+        
           const { sound } = await Audio.Sound.createAsync({ uri: track.audio });
           setSound(sound);
           await sound.playAsync();
-
+        
           // Get the song name, artist name, and album art
           const songName = track.name;
           const artistName = track.artist_name;
           const albumArtUrl = track.image;
-
+        
           // Update the songName and artistName state variables
           setSongName(songName);
           setArtistName(artistName);
           setAlbumArt(albumArtUrl);
-
+        
+          // Reset and start the animation
+          resetAndStartAnimation();
+        
           // Add an event listener to detect when the current song ends
           sound.setOnPlaybackStatusUpdate(async (status) => {
             if (status.didJustFinish) {
@@ -599,17 +595,54 @@ const LessonScreen = ({ navigation }) => {
       }
     }
   }
+
+  const startSpinAnimation = () => {
+    Animated.loop(
+      Animated.timing(spinValue, {
+        toValue: 1,
+        duration: 4000,  // 4 seconds for one complete rotation
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    ).start();
+  };
+  
+  const stopSpinAnimation = () => {
+    if (isPlaying && sound) {
+    
+      Animated.timing(spinValue, {
+        toValue: 1,
+        duration: 4000, 
+        easing: Easing.out(Easing.exp),
+        useNativeDriver: true,
+      }).start(() => {
+        spinValue.setValue(0);
+      });
+    }
+  };  
+  
+  const spin = spinValue.interpolate({
+      inputRange: [0, 1],
+      outputRange: ['0deg', '360deg']  // spin from 0 to 360 degrees
+  });
+
+  const resetAndStartAnimation = () => {
+    spinValue.setValue(0);
+    startSpinAnimation();
+  };
   
   async function pauseMusic() {
-    if (sound) {
-      if (isPlaying) {
-        await sound.pauseAsync();
-      } else {
-        await sound.playAsync();
+      if (sound) {
+          if (isPlaying) {
+              await sound.pauseAsync();
+              stopSpinAnimation();
+          } else {
+              await sound.playAsync();
+              startSpinAnimation();
+          }
+          setIsPlaying(!isPlaying); // Toggle the state
       }
-      setIsPlaying(!isPlaying); // Toggle the state
-    }
-  }  
+  }
 
   useEffect(() => {
     return sound
@@ -621,7 +654,7 @@ const LessonScreen = ({ navigation }) => {
 
   useEffect(() => {
     loadRandomMusicFromJamendo();
-}, []);
+  }, []);
 
     const renderItem = ({ item, index }) => {
         const isExpanded = index === expandedItem;
@@ -629,7 +662,7 @@ const LessonScreen = ({ navigation }) => {
         const isImageLoaded = imageLoaded[item.id];
         const isOverflowing = overflowingItems[index];
         const shouldShowMoreButton = isOverflowing && !isExpanded;
-        const isForYouTab = activeTab === 0; // Assuming 0 represents the "For You" tab
+        const isForYouTab = activeTab === 0; 
         const imageSource = isForYouTab ? imageUrls[item.id] : item.imageUrl;
         
     return (
@@ -729,13 +762,18 @@ const LessonScreen = ({ navigation }) => {
               style={styles.discButton}
               onPress={pauseMusic}
             >
-              <View style={styles.iconTextContainer}>
-                <Image style={styles.discImage} source={require('./img/disc.png') }></Image>
-                <Image
-                  style={styles.albumImage}
-                  source={albumArt ? { uri: albumArt } : null}
-                />
-              </View>
+              <Animated.View
+                  style={{
+                      ...styles.iconTextContainer,
+                      transform: [{ rotate: spin }]
+                  }}
+              >
+                  <Image style={styles.discImage} source={require('./img/disc.png')}></Image>
+                  <Image
+                      style={styles.albumImage}
+                      source={albumArt ? { uri: albumArt } : null}
+                  />
+              </Animated.View>
             </TouchableOpacity>
             </View>
             {currentLikedItem && currentLikedItem.id === item.id && (
@@ -772,16 +810,16 @@ const LessonScreen = ({ navigation }) => {
         setActiveTab(pageIndex);
         if (pageIndex === 1) {
           setNewLikedItemsAdded(false);
+          AsyncStorage.setItem('newLikedItemsAdded', 'false');
         }
       }}
     >
-      {vocabularyData.length === 0 && loadingMore ? ( // Check if data is loading and no items are available
+      {vocabularyData.length === 0 && loadingMore ? ( 
         <View style={styles.activityIndicatorContainer}>
           <ActivityIndicator size="large" color="#fff" />
         </View>
       ) : (
           <FlatList
-          
           on
           ref={flatListRef}
           data={vocabularyData}
@@ -791,7 +829,7 @@ const LessonScreen = ({ navigation }) => {
           pagingEnabled={true}
           decelerationRate={'fast'} 
           onEndReached={fetchRandomWordsAndImages}
-          onEndReachedThreshold={5} // Adjust this value based on your preference 
+          onEndReachedThreshold={3} 
           ListFooterComponent={() => (
             <View style={{ marginTop: 5 }}>
               {loadingMore && vocabularyData.length > 0 ? (
@@ -820,8 +858,6 @@ const LessonScreen = ({ navigation }) => {
           </View>
         </View>
       ) : null}
-
-          
       </ScrollView>
       <SafeAreaView style={styles.tabBar}>
         {tabs.map((tab, index) => renderTab(tab, index))}
@@ -838,7 +874,7 @@ const styles = StyleSheet.create({
   tabBar: {
     flexDirection: 'row',
     justifyContent: 'center',
-    alignItems: 'center',     // Center vertically
+    alignItems: 'center',    
     position: 'absolute',
     top: StatusBar.currentHeight,
     left: 0,
@@ -883,12 +919,12 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    height: Dimensions.get('window').height + StatusBar.currentHeight, // Screen height
+    height: Dimensions.get('window').height + StatusBar.currentHeight, 
     width: Dimensions.get('window').width,
   },
   cardContainer: {
     flex: 1,
-    height: Dimensions.get('window').height + StatusBar.currentHeight, // Screen height
+    height: Dimensions.get('window').height + StatusBar.currentHeight, 
     width: Dimensions.get('window').width,
   },
    card: {
@@ -961,7 +997,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', 
     bottom: 40,
     left: 15,
-    width: 270,
+    width: 273,
   },
   meaning: {
     flex: 1,
@@ -981,7 +1017,7 @@ const styles = StyleSheet.create({
   },
   currentSongText: {
     fontSize: 18,
-    color: '#888', // White color
+    color: '#888', 
     width: 290,
     opacity: 0.8,
   },
@@ -1005,7 +1041,6 @@ const styles = StyleSheet.create({
   },
   discButton: {
     marginTop: 32,
-    // bottom: 3,
   },
   discImage: {
     width: 50, 
