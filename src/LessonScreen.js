@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { View, FlatList, Text, StyleSheet, Dimensions, TouchableOpacity, Image, ImageBackground, ScrollView, SafeAreaView, Animated, TouchableWithoutFeedback, ActivityIndicator, StatusBar, Share, LayoutAnimation, UIManager, Easing } from 'react-native';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import { createClient } from 'pexels';
@@ -140,27 +140,29 @@ const LessonScreen = ({ navigation }) => {
       }
     };        
     
-    const fetchAudio = async (word) => {
-      try {
+    const fetchAudio = useMemo(() => {
+      return async (word) => {
+        try {
           const response = await axios.get(`https://api.dictionaryapi.dev/api/v2/entries/en/${word}`);
           const phonetics = response.data[0]?.phonetics;
   
           if (phonetics && phonetics.length > 0 && phonetics[0].audio) {
-              const audioUrl = phonetics[0].audio;
-              try {
-                  const { sound } = await Audio.Sound.createAsync({ uri: audioUrl });
-              } catch (error) {
-                  console.error('Error preloading audio:', error);
-              }
-              return audioUrl;
+            const audioUrl = phonetics[0].audio;
+            try {
+              const { sound } = await Audio.Sound.createAsync({ uri: audioUrl });
+            } catch (error) {
+              console.error('Error preloading audio:', error);
+            }
+            return audioUrl;
           } else {
-              console.log('Pronunciation audio not available.');
+            console.log('Pronunciation audio not available.');
           }
-      } catch (error) {
+        } catch (error) {
           console.error('Error fetching pronunciation:', error);
-      }
-      return null;
-  };
+        }
+        return null;
+      };
+    }, []);
   
   const placeholderWords = [
     'serenity', 'elegance', 'innovation', 'blossom', 'grace', 'inspiration'
@@ -169,60 +171,64 @@ const LessonScreen = ({ navigation }) => {
   const fetchedImages = new Set();
   const usedQueries = new Set();
   
-  const fetchImage = async (word) => {
-    try {
-      // Check if the image URL is already cached
-      if (cachedImageUrls[word]) {
-        return cachedImageUrls[word];
-      }
-  
-      // Search for images using the given word
-      const response = await client.photos.search({ query: word, per_page: 4 });
-      const photos = response.photos;
-  
-      // Find the first available image that is not in fetchedImages
-      const availableImage = photos.find((photo) => !fetchedImages.has(photo.src.large));
-  
-      if (availableImage) {
-        const imageUrl = availableImage.src.large;
-        fetchedImages.add(imageUrl);
-  
-        // After successfully fetching the image URL, cache it
-        cacheImageUrl(word, imageUrl);
-  
-        return imageUrl;
-      }
-  
-      // If no photos were found or all were duplicates, try placeholder images
-      // Shuffle the placeholderWords array to avoid using the same word repeatedly
-      const shuffledWords = shuffleArray(placeholderWords);
-  
-      for (const placeholderWord of shuffledWords) {
-        // Reset usedQueries Set for each placeholder word
-        usedQueries.clear();
-  
-        const placeholderResponse = await client.photos.search({ query: placeholderWord, per_page: 4 });
-        const placeholderPhotos = placeholderResponse.photos;
-  
-        // Find the first available placeholder image that is not in fetchedImages
-        const availablePlaceholderImage = placeholderPhotos.find((photo) => !fetchedImages.has(photo.src.large));
-  
-        if (availablePlaceholderImage) {
-          const imageUrl = availablePlaceholderImage.src.large;
+  const fetchImage = useMemo(() => {
+    const cachedImageUrls = {};
+
+    return async (word) => {
+      try {
+        // Check if the image URL is already cached
+        if (cachedImageUrls[word]) {
+          return cachedImageUrls[word];
+        }
+
+        // Search for images using the given word
+        const response = await client.photos.search({ query: word, per_page: 4 });
+        const photos = response.photos;
+
+        // Find the first available image that is not in fetchedImages
+        const availableImage = photos.find((photo) => !fetchedImages.has(photo.src.large));
+
+        if (availableImage) {
+          const imageUrl = availableImage.src.large;
           fetchedImages.add(imageUrl);
-  
+
           // After successfully fetching the image URL, cache it
-          cacheImageUrl(word, imageUrl);
-  
+          cachedImageUrls[word] = imageUrl;
+
           return imageUrl;
         }
+
+        // If no photos were found or all were duplicates, try placeholder images
+        // Shuffle the placeholderWords array to avoid using the same word repeatedly
+        const shuffledWords = shuffleArray(placeholderWords);
+
+        for (const placeholderWord of shuffledWords) {
+          // Reset usedQueries Set for each placeholder word
+          usedQueries.clear();
+
+          const placeholderResponse = await client.photos.search({ query: placeholderWord, per_page: 4 });
+          const placeholderPhotos = placeholderResponse.photos;
+
+          // Find the first available placeholder image that is not in fetchedImages
+          const availablePlaceholderImage = placeholderPhotos.find((photo) => !fetchedImages.has(photo.src.large));
+
+          if (availablePlaceholderImage) {
+            const imageUrl = availablePlaceholderImage.src.large;
+            fetchedImages.add(imageUrl);
+
+            // After successfully fetching the image URL, cache it
+            cachedImageUrls[word] = imageUrl;
+
+            return imageUrl;
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching image:', error);
       }
-    } catch (error) {
-      console.error('Error fetching image:', error);
-    }
-  
-    return 'https://example.com/placeholder-image.jpg'; // Default placeholder image URL
-  };  
+
+      return 'https://example.com/placeholder-image.jpg'; // Default placeholder image URL
+    };
+  }, [fetchedImages]);
   
   const shuffleArray = (array) => {
     let currentIndex = array.length, randomIndex;
@@ -294,7 +300,7 @@ const LessonScreen = ({ navigation }) => {
     const [heartAnimationActive, setHeartAnimationActive] = useState(false);
     const spinValue = useRef(new Animated.Value(0)).current;
 
-    const handleDoubleTap = async (item, event) => {
+    const handleDoubleTap = useCallback(async (item, event) => {
       const currentTime = Date.now();
       const isLiked = likedItems.includes(item.id);
       const doubleTapThreshold = 600; // Set your desired double-tap threshold in milliseconds
@@ -379,7 +385,7 @@ const LessonScreen = ({ navigation }) => {
       }
     
       setLastTapTime(currentTime);
-    };
+    }, [likedItems, heartAnimationActive, lastTapTime, vocabularyData, imageUrls]); 
       
    
   const heartBeatValue = useState(new Animated.Value(1))[0];
@@ -540,7 +546,7 @@ const LessonScreen = ({ navigation }) => {
   const [albumArt, setAlbumArt] = useState('');
 
   const JAMENDO_API_KEY = 'aa92f003'; 
-  const keyword = 'lofi';
+  const keyword = 'piano';
   const maxOffset = 5; 
   const playedSongs = []; 
 
@@ -578,7 +584,7 @@ const LessonScreen = ({ navigation }) => {
           setAlbumArt(albumArtUrl);
         
           // Reset and start the animation
-          resetAndStartAnimation();
+          // resetAndStartAnimation();
         
           // Add an event listener to detect when the current song ends
           sound.setOnPlaybackStatusUpdate(async (status) => {
@@ -596,49 +602,49 @@ const LessonScreen = ({ navigation }) => {
     }
   }
 
-  const startSpinAnimation = () => {
-    Animated.loop(
-      Animated.timing(spinValue, {
-        toValue: 1,
-        duration: 4000,  // 4 seconds for one complete rotation
-        easing: Easing.linear,
-        useNativeDriver: true,
-      })
-    ).start();
-  };
+  // const startSpinAnimation = () => {
+  //   Animated.loop(
+  //     Animated.timing(spinValue, {
+  //       toValue: 1,
+  //       duration: 4000,  // 4 seconds for one complete rotation
+  //       easing: Easing.linear,
+  //       useNativeDriver: true,
+  //     })
+  //   ).start();
+  // };
   
-  const stopSpinAnimation = () => {
-    if (isPlaying && sound) {
+  // const stopSpinAnimation = () => {
+  //   if (isPlaying && sound) {
     
-      Animated.timing(spinValue, {
-        toValue: 1,
-        duration: 4000, 
-        easing: Easing.out(Easing.exp),
-        useNativeDriver: true,
-      }).start(() => {
-        spinValue.setValue(0);
-      });
-    }
-  };  
+  //     Animated.timing(spinValue, {
+  //       toValue: 1,
+  //       duration: 4000, 
+  //       easing: Easing.out(Easing.exp),
+  //       useNativeDriver: true,
+  //     }).start(() => {
+  //       spinValue.setValue(0);
+  //     });
+  //   }
+  // };  
   
-  const spin = spinValue.interpolate({
-      inputRange: [0, 1],
-      outputRange: ['0deg', '360deg']  // spin from 0 to 360 degrees
-  });
+  // const spin = spinValue.interpolate({
+  //     inputRange: [0, 1],
+  //     outputRange: ['0deg', '360deg']  // spin from 0 to 360 degrees
+  // });
 
-  const resetAndStartAnimation = () => {
-    spinValue.setValue(0);
-    startSpinAnimation();
-  };
+  // const resetAndStartAnimation = () => {
+  //   spinValue.setValue(0);
+  //   startSpinAnimation();
+  // };
   
   async function pauseMusic() {
       if (sound) {
           if (isPlaying) {
               await sound.pauseAsync();
-              stopSpinAnimation();
+              // stopSpinAnimation();
           } else {
               await sound.playAsync();
-              startSpinAnimation();
+              // startSpinAnimation();
           }
           setIsPlaying(!isPlaying); // Toggle the state
       }
@@ -672,7 +678,7 @@ const LessonScreen = ({ navigation }) => {
         >
         <ImageBackground
           source={{ uri: imageSource }}
-          onLoad={() => setImageLoaded((prevLoaded) => ({ ...prevLoaded, [item.id]: true }))}
+          onLoad={() => onImageLoad(item.id, imageSource)} 
           style={styles.card}
           imageStyle={styles.card}
           resizeMode="cover"
@@ -691,7 +697,7 @@ const LessonScreen = ({ navigation }) => {
                         </TouchableOpacity>
                     ) : (
                         <View style={styles.disabledSpeakerIcon}>
-                            <Icon name="volume-up" size={25} color="#888" style={styles.speakerIcon} />
+                            <Icon name="volume-up" size={25} color="#999" style={styles.speakerIcon} />
                         </View>
                     )}
             </View>
@@ -765,7 +771,7 @@ const LessonScreen = ({ navigation }) => {
               <Animated.View
                   style={{
                       ...styles.iconTextContainer,
-                      transform: [{ rotate: spin }]
+                      // transform: [{ rotate: spin }]
                   }}
               >
                   <Image style={styles.discImage} source={require('./img/disc.png')}></Image>
@@ -797,23 +803,25 @@ const LessonScreen = ({ navigation }) => {
     );
   };
 
+  const handleScrollEnd = useCallback((event) => {
+    const pageIndex = Math.round(event.nativeEvent.contentOffset.x / Dimensions.get('window').width);
+    activeTabIndexRef.current = pageIndex;
+    setActiveTab(pageIndex);
+    if (pageIndex === 1) {
+      setNewLikedItemsAdded(false);
+      AsyncStorage.setItem('newLikedItemsAdded', 'false');
+    }
+  }, []);
+
   return (
     <View style={styles.container}>
     <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      ref={scrollViewRef}
-      pagingEnabled
-      onMomentumScrollEnd={(event) => {
-        const pageIndex = Math.round(event.nativeEvent.contentOffset.x / Dimensions.get('window').width);
-        activeTabIndexRef.current = pageIndex;
-        setActiveTab(pageIndex);
-        if (pageIndex === 1) {
-          setNewLikedItemsAdded(false);
-          AsyncStorage.setItem('newLikedItemsAdded', 'false');
-        }
-      }}
-    >
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        ref={scrollViewRef}
+        pagingEnabled
+        onMomentumScrollEnd={handleScrollEnd}
+      >
       {vocabularyData.length === 0 && loadingMore ? ( 
         <View style={styles.activityIndicatorContainer}>
           <ActivityIndicator size="large" color="#fff" />
@@ -825,13 +833,18 @@ const LessonScreen = ({ navigation }) => {
           data={vocabularyData}
           renderItem={renderItem}
           keyExtractor={(item) => item.id.toString()}
+          initialNumToRender={5} 
+          maxToRenderPerBatch={5} 
+          windowSize={5}
+          removeClippedSubviews={true}
+          extraData={[likedItems]}
           showsVerticalScrollIndicator={false}
           pagingEnabled={true}
           decelerationRate={'fast'} 
           onEndReached={fetchRandomWordsAndImages}
-          onEndReachedThreshold={3} 
+          onEndReachedThreshold={4} 
           ListFooterComponent={() => (
-            <View style={{ marginTop: 5 }}>
+            <View style={{ paddingTop: 10 }}>
               {loadingMore && vocabularyData.length > 0 ? (
                 <ActivityIndicator size={30} color="#fff" />
               ) : null}
@@ -849,6 +862,7 @@ const LessonScreen = ({ navigation }) => {
                 renderItem={renderItem}
                 keyExtractor={(item) => item.id.toString()}
                 showsVerticalScrollIndicator={false}
+                removeClippedSubviews={true}
                 pagingEnabled={true}
                 decelerationRate={'fast'}
               />
@@ -908,11 +922,11 @@ const styles = StyleSheet.create({
     position: 'absolute',
     borderRadius: 2,
     top: 0, 
-    right: 4,
-    width: 8,
-    height: 8,
+    right: 6,
+    width: 9,
+    height: 9,
     backgroundColor: '#FF6B6B',
-    borderRadius: 4,
+    borderRadius: 9,
   },
     
   activityIndicatorContainer: {
@@ -1017,7 +1031,7 @@ const styles = StyleSheet.create({
   },
   currentSongText: {
     fontSize: 18,
-    color: '#888', 
+    color: '#999', 
     width: 290,
     opacity: 0.8,
   },
@@ -1060,11 +1074,11 @@ const styles = StyleSheet.create({
     marginTop: 5,
   },
   seeMoreLink: {
+    padding: 5,
     position: 'absolute',
-    bottom: 0,
+    bottom: -5,
     left: 0,
-    paddingHorizontal: 5,
-    color: '#888',
+    color: '#999',
     fontSize: 16,
     opacity: 0.8,
   },
@@ -1074,4 +1088,4 @@ const styles = StyleSheet.create({
   }
 });
 
-export default LessonScreen;
+export default React.memo(LessonScreen);
