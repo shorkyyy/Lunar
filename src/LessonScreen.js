@@ -14,8 +14,7 @@ const tabs = ['For You', 'Liked'];
 const client = createClient('XoJwUYOzKMoDE3chOvLGeDqEoSdDtUNseGnCEnIQB4n2V3Te2lMlQLHS');
 SplashScreen.preventAutoHideAsync();
 
-const LessonScreen = ({ navigation }) => {
-      
+const LessonScreen = ({ navigation }) => {      
     const flatListRef = useRef(null);
     const [expandedItem, setExpandedItem] = useState(null);
     const [imageLoaded, setImageLoaded] = useState({});
@@ -53,47 +52,45 @@ const LessonScreen = ({ navigation }) => {
   
     const fetchRandomWordsAndImages = async () => {
       try {
+        setLoadingMore(true);
+    
         const numberOfWords = 5;
     
         const vocabData = require('./lib/vocab.json');
         const allWords = Object.values(vocabData).flat();
         const shuffledWords = shuffleArray(allWords);
         const wordsToFetch = new Set();
+    
         for (const word of shuffledWords) {
           if (wordsToFetch.size >= numberOfWords) {
-            break; 
+            break;
           }
           wordsToFetch.add(word);
         }
     
         const combinedFetchPromises = Array.from(wordsToFetch).map(async (word) => {
           try {
-            const response = await axios.get(`https://wordsapiv1.p.rapidapi.com/words/${word}`, {
-              headers: {
-                'X-RapidAPI-Host': 'wordsapiv1.p.rapidapi.com',
-                'X-RapidAPI-Key': 'a35d25fb98mshd2eb21dfb3d12aep16da25jsnb9e7d92258d1',
-              },
-            });
+            const response = await axios.get(`https://api.dictionaryapi.dev/api/v2/entries/en/${word}`);
     
-            const { word: apiWord, results, pronunciation } = response.data;
-            await SplashScreen.hideAsync();
-    
-            if (Array.isArray(results) && results.length > 0) {
-              setLoadingMore(true);
-              const firstDefinition = capitalizeFirstLetter(results[0].definition);
-              const firstPartOfSpeech = formatPartOfSpeech(results[0].partOfSpeech);
+            if (response.data && response.data.length > 0) {
+              const wordData = response.data[0];
+              const { word: apiWord, phonetic, phonetics } = wordData;
+              const audioUrl = phonetics && phonetics[0] && phonetics[0].audio
+                ? `https:${phonetics[0].audio}`
+                : null;
+              const wordPronunciation = phonetic || 'Unavailable';
               const capitalizedWord = capitalizeFirstLetter(apiWord);
-              const wordPronunciation = pronunciation
-                ? pronunciation.all
-                  ? `/${pronunciation.all}/`
-                  : `/${pronunciation}/`
+              const firstMeaning = wordData.meanings && wordData.meanings[0];
+              const firstDefinition = firstMeaning
+                ? capitalizeFirstLetter(firstMeaning.definitions[0].definition)
+                : 'Unavailable';
+              const firstPartOfSpeech = firstMeaning
+                ? formatPartOfSpeech(firstMeaning.partOfSpeech)
                 : 'Unavailable';
     
               // Fetch image for the current word
               const imageUrl = await fetchImage(word);
-    
-              // Fetch audio URL for the current word
-              const audioUrl = await fetchAudio(word);
+              await SplashScreen.hideAsync();
     
               return {
                 id: word,
@@ -105,7 +102,7 @@ const LessonScreen = ({ navigation }) => {
                 audioUrl: audioUrl,
               };
             } else {
-              return null; 
+              return null;
             }
           } catch (error) {
             return null;
@@ -134,100 +131,87 @@ const LessonScreen = ({ navigation }) => {
         }, {});
     
         setImageUrls((prevImageUrls) => ({ ...prevImageUrls, ...imageURLs }));
+    
+        setLoadingMore(true); // Set loadingMore back to false when data fetching is done
       } catch (error) {
         console.error('Error fetching random words and images:', error);
         await SplashScreen.hideAsync();
+        setLoadingMore(true); // Handle error and set loadingMore back to false
       }
-    };        
+    };    
+    const placeholderWords = [
+      'serenity', 'elegance', 'innovation', 'blossom', 'grace', 'inspiration'
+    ];  
     
-    const fetchAudio = useMemo(() => {
+    const fetchedImages = new Set();
+    const usedQueries = new Set();
+    
+    const fetchImage = useMemo(() => {
+      const cachedImageUrls = {};
+      const usedImageUrls = new Set(); // Keep track of used image URLs
+
       return async (word) => {
-        try {
-          const response = await axios.get(`https://api.dictionaryapi.dev/api/v2/entries/en/${word}`);
-          const phonetics = response.data[0]?.phonetics;
-  
-          if (phonetics && phonetics.length > 0 && phonetics[0].audio) {
-            const audioUrl = phonetics[0].audio;
-            try {
-              const { sound } = await Audio.Sound.createAsync({ uri: audioUrl });
-            } catch (error) {
-              console.error('Error preloading audio:', error);
-            }
-            return audioUrl;
-          } else {
-            console.log('Pronunciation audio not available.');
+          try {
+              // Check if the image URL is already cached
+              if (cachedImageUrls[word]) {
+                  return cachedImageUrls[word];
+              }
+
+              // Search for images using the given word
+              const response = await client.photos.search({ query: word, per_page: 4 });
+              const photos = response.photos;
+
+              // Find the first available image that is not in fetchedImages or usedImageUrls
+              const availableImage = photos.find((photo) => {
+                  const imageUrl = photo.src.large;
+                  return !fetchedImages.has(imageUrl) && !usedImageUrls.has(imageUrl);
+              });
+
+              if (availableImage) {
+                  const imageUrl = availableImage.src.large;
+                  fetchedImages.add(imageUrl);
+                  usedImageUrls.add(imageUrl); // Mark the image URL as used
+
+                  // After successfully fetching the image URL, cache it
+                  cachedImageUrls[word] = imageUrl;
+
+                  return imageUrl;
+              }
+
+              // If no photos were found or all were duplicates, try placeholder images
+              // Shuffle the placeholderWords array to avoid using the same word repeatedly
+              const shuffledWords = shuffleArray(placeholderWords);
+
+              for (const placeholderWord of shuffledWords) {
+                  // Reset usedQueries Set for each placeholder word
+                  usedQueries.clear();
+
+                  const placeholderResponse = await client.photos.search({ query: placeholderWord, per_page: 4 });
+                  const placeholderPhotos = placeholderResponse.photos;
+
+                  // Find the first available placeholder image that is not in fetchedImages or usedImageUrls
+                  const availablePlaceholderImage = placeholderPhotos.find((photo) => {
+                      const imageUrl = photo.src.large;
+                      return !fetchedImages.has(imageUrl) && !usedImageUrls.has(imageUrl);
+                  });
+
+                  if (availablePlaceholderImage) {
+                      const imageUrl = availablePlaceholderImage.src.large;
+                      fetchedImages.add(imageUrl);
+                      usedImageUrls.add(imageUrl); // Mark the image URL as used
+
+                      // After successfully fetching the image URL, cache it
+                      cachedImageUrls[word] = imageUrl;
+
+                      return imageUrl;
+                  }
+              }
+          } catch (error) {
+              console.error('Error fetching image:', error);
           }
-        } catch (error) {
-          console.error('Error fetching pronunciation:', error);
-        }
-        return null;
+
+          return 'https://example.com/placeholder-image.jpg'; // Default placeholder image URL
       };
-    }, []);
-  
-  const placeholderWords = [
-    'serenity', 'elegance', 'innovation', 'blossom', 'grace', 'inspiration'
-  ];  
-  
-  const fetchedImages = new Set();
-  const usedQueries = new Set();
-  
-  const fetchImage = useMemo(() => {
-    const cachedImageUrls = {};
-
-    return async (word) => {
-      try {
-        // Check if the image URL is already cached
-        if (cachedImageUrls[word]) {
-          return cachedImageUrls[word];
-        }
-
-        // Search for images using the given word
-        const response = await client.photos.search({ query: word, per_page: 4 });
-        const photos = response.photos;
-
-        // Find the first available image that is not in fetchedImages
-        const availableImage = photos.find((photo) => !fetchedImages.has(photo.src.large));
-
-        if (availableImage) {
-          const imageUrl = availableImage.src.large;
-          fetchedImages.add(imageUrl);
-
-          // After successfully fetching the image URL, cache it
-          cachedImageUrls[word] = imageUrl;
-
-          return imageUrl;
-        }
-
-        // If no photos were found or all were duplicates, try placeholder images
-        // Shuffle the placeholderWords array to avoid using the same word repeatedly
-        const shuffledWords = shuffleArray(placeholderWords);
-
-        for (const placeholderWord of shuffledWords) {
-          // Reset usedQueries Set for each placeholder word
-          usedQueries.clear();
-
-          const placeholderResponse = await client.photos.search({ query: placeholderWord, per_page: 4 });
-          const placeholderPhotos = placeholderResponse.photos;
-
-          // Find the first available placeholder image that is not in fetchedImages
-          const availablePlaceholderImage = placeholderPhotos.find((photo) => !fetchedImages.has(photo.src.large));
-
-          if (availablePlaceholderImage) {
-            const imageUrl = availablePlaceholderImage.src.large;
-            fetchedImages.add(imageUrl);
-
-            // After successfully fetching the image URL, cache it
-            cachedImageUrls[word] = imageUrl;
-
-            return imageUrl;
-          }
-        }
-      } catch (error) {
-        console.error('Error fetching image:', error);
-      }
-
-      return 'https://example.com/placeholder-image.jpg'; // Default placeholder image URL
-    };
   }, [fetchedImages]);
   
   const shuffleArray = (array) => {
@@ -354,7 +338,7 @@ const LessonScreen = ({ navigation }) => {
                 setCurrentLikedItem(null);
                 setHeartAnimationActive(false); // Reset animation active
               });
-            }, 400);
+            }, 600);
     
             // Check if the item is already liked
             if (!isLiked) {
@@ -368,7 +352,7 @@ const LessonScreen = ({ navigation }) => {
                 // Add imageUrl to the item before saving
                 const itemWithImageUrl = {
                   ...item,
-                  imageUrl: imageUrls[item.id],   // Assign the imageUrl for the current item
+                  imageUrl: imageUrls[item.id],  
                 };
     
                 const updatedStoredLikedItems = [...parsedLikedItems, itemWithImageUrl];
@@ -404,7 +388,7 @@ const LessonScreen = ({ navigation }) => {
       }),
     ]).start();
   };
-  const toggleLike = async (item) => {
+  const toggleLike = useCallback(async (item) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const isLiked = likedItems.includes(item.id);
   
@@ -454,7 +438,7 @@ const LessonScreen = ({ navigation }) => {
         console.error('Error saving liked item to AsyncStorage:', error);
       }
     }
-  };  
+  });  
     const shareWord = (word, pronunciation, meaning, partOfSpeech) => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)
       Share.share({
@@ -546,7 +530,7 @@ const LessonScreen = ({ navigation }) => {
   const [albumArt, setAlbumArt] = useState('');
 
   const JAMENDO_API_KEY = 'aa92f003'; 
-  const keyword = 'piano';
+  const keyword = 'lofi';
   const maxOffset = 5; 
   const playedSongs = []; 
 
@@ -601,50 +585,13 @@ const LessonScreen = ({ navigation }) => {
       }
     }
   }
-
-  // const startSpinAnimation = () => {
-  //   Animated.loop(
-  //     Animated.timing(spinValue, {
-  //       toValue: 1,
-  //       duration: 4000,  // 4 seconds for one complete rotation
-  //       easing: Easing.linear,
-  //       useNativeDriver: true,
-  //     })
-  //   ).start();
-  // };
-  
-  // const stopSpinAnimation = () => {
-  //   if (isPlaying && sound) {
-    
-  //     Animated.timing(spinValue, {
-  //       toValue: 1,
-  //       duration: 4000, 
-  //       easing: Easing.out(Easing.exp),
-  //       useNativeDriver: true,
-  //     }).start(() => {
-  //       spinValue.setValue(0);
-  //     });
-  //   }
-  // };  
-  
-  // const spin = spinValue.interpolate({
-  //     inputRange: [0, 1],
-  //     outputRange: ['0deg', '360deg']  // spin from 0 to 360 degrees
-  // });
-
-  // const resetAndStartAnimation = () => {
-  //   spinValue.setValue(0);
-  //   startSpinAnimation();
-  // };
   
   async function pauseMusic() {
       if (sound) {
           if (isPlaying) {
               await sound.pauseAsync();
-              // stopSpinAnimation();
           } else {
               await sound.playAsync();
-              // startSpinAnimation();
           }
           setIsPlaying(!isPlaying); // Toggle the state
       }
@@ -683,10 +630,11 @@ const LessonScreen = ({ navigation }) => {
           imageStyle={styles.card}
           resizeMode="cover"
         >
-        <LinearGradient
-            colors={['rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0.5)','rgba(0, 0, 0, 0.8)']} // Adjust the gradient colors as needed
-            style={styles.gradientContainer}>   
-        </LinearGradient>  
+          <LinearGradient
+            colors={['rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0.6)', 'rgba(0, 0, 0, 0.9)']}
+            style={[styles.gradientContainer, { height: expandedItem === index ? '50%' : "33%" }]}
+          >
+          </LinearGradient> 
           <View style={styles.contentContainer}>
             <View style={styles.wordContainer}>
                 <Text style={styles.word}>{item.word}</Text>
@@ -728,9 +676,19 @@ const LessonScreen = ({ navigation }) => {
             </TouchableOpacity>
           )}
         </View>
+        <TouchableOpacity style={styles.translationContainer} >
+          <Text style={styles.Translation}>See translation</Text>
+        </TouchableOpacity>
         <View style={styles.currentSongContainer}>
-            <Icon name="music" size={18} color="rgba(136, 136, 136, 0.8)" style={styles.musicNoteIcon} />
-            <TextTicker duration={20500} numberOfLines={1} style={styles.currentSongText}>
+            <Icon name="music" size={16} color="#ccc" style={styles.musicNoteIcon} />
+            <TextTicker
+              duration={12000} 
+              loop
+              marqueeDelay={1200}
+              numberOfLines={1}
+              repeatSpacer={250}
+              style={styles.currentSongText}
+            >
               {`${songName} - ${artistName}`}
             </TextTicker>
           </View>
@@ -754,6 +712,15 @@ const LessonScreen = ({ navigation }) => {
                 </Animated.View>
                 <Text style={styles.buttonText}>Like</Text>
                 </View>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.commentButton}
+              onPress={() => shareWord(item.word, item.pronunciation, item.meaning, item.partOfSpeech)}
+            >
+              <View style={styles.iconTextContainer}>
+                <Icon name="comment" size={28} color="#fff" />
+                <Text style={styles.buttonText}>About</Text>
+              </View>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.shareButton}
@@ -911,11 +878,11 @@ const styles = StyleSheet.create({
   },
   tabIndicator: {
     position: 'absolute',
-    marginTop: 28,
-    borderRadius: 2,
+    marginTop: 30,
+    borderRadius: 5,
     borderBottomWidth: 4, 
     borderBottomColor: '#fff', 
-    width: 35,
+    width: 20,
     alignSelf: 'center', 
   },
   dot: {
@@ -972,14 +939,14 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: '32%',
+    height: '33%',
   },
   contentContainer: {
     flex: 1,
     flexDirection: 'column', 
     justifyContent: 'flex-end', 
     alignItems: 'flex-start',
-    bottom: 40,
+    bottom: 30,
     left: 15,
   },
   word: {
@@ -1000,48 +967,63 @@ const styles = StyleSheet.create({
   speakerIcon: {
     marginLeft: 10,
   },
-    
   pronunciation: {
+    marginTop: 5,
     fontSize: 18,
     color: '#fff',
-
   },
   meaningContainer:{
-    marginTop: 20,
+    marginTop: 5,
     flexDirection: 'row', 
-    bottom: 40,
+    bottom: 30,
     left: 15,
-    width: 273,
+    width: 280,
   },
   meaning: {
     flex: 1,
     fontSize: 18,
     color: '#ccc',
+    opacity: 0.8,
+  },
+  translationContainer: {
+    marginTop: 10,
+    bottom: 30,
+    left: 15,
+    width: 130,
+  },
+  Translation: {
+    color: '#ccc',
+    fontWeight:'bold',
+    fontSize: 16,
+    opacity: 0.6,
   },
   currentSongContainer: {
     flexDirection: 'row', 
     alignItems: 'center',
-    bottom: 40,
+    bottom: 30,
     left: 15,
-    marginTop: 5, 
-    opacity: 0.8,
+    marginTop: 20, 
+    backgroundColor: "rgba(136, 136, 136, 0.5)",
+    borderRadius: 20,
+    width: 230,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
   },
   musicNoteIcon: {
     marginRight: 10,
   },
   currentSongText: {
-    fontSize: 18,
-    color: '#999', 
-    width: 290,
-    opacity: 0.8,
+    fontSize: 16,
+    color: '#ccc', 
+    width: 180,
   },
   sideButtonContainer: {
     position: 'absolute',
-    bottom: 40,
-    right: 15,
+    bottom: 30,
+    right: 10,
     flexDirection: 'column',
-    alignItems: 'flex-end',
-    alignContent: 'flex-end',
+    alignItems: 'center',
+    alignContent: 'center',
   },
   iconTextContainer: {
     flexDirection: 'column',
@@ -1050,11 +1032,14 @@ const styles = StyleSheet.create({
   
   likeButton: {
   },
+  commentButton: {
+    marginTop: 30,
+  },
   shareButton: {
-    marginTop: 32,
+    marginTop: 30,
   },
   discButton: {
-    marginTop: 32,
+    marginTop: 30,
   },
   discImage: {
     width: 50, 
@@ -1075,12 +1060,13 @@ const styles = StyleSheet.create({
   },
   seeMoreLink: {
     padding: 5,
+    fontWeight:'bold',
     position: 'absolute',
     bottom: -5,
     left: 0,
     color: '#999',
     fontSize: 16,
-    opacity: 0.8,
+    opacity: 0.6,
   },
   noLikedText: {
     color: '#fff',
