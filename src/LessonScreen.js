@@ -9,6 +9,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import TextTicker from 'react-native-text-ticker'
+import { Modalize } from 'react-native-modalize';
 
 const tabs = ['For You', 'Liked']; 
 const client = createClient('XoJwUYOzKMoDE3chOvLGeDqEoSdDtUNseGnCEnIQB4n2V3Te2lMlQLHS');
@@ -28,9 +29,23 @@ const LessonScreen = ({ navigation }) => {
     const [likedItemsFromStorage, setLikedItemsFromStorage] = useState([]);
     const [newLikedItemsAdded, setNewLikedItemsAdded] = useState(false);
     const [isPlaying, setIsPlaying] = useState(true);
-    const [maxCachedImages] = useState(50); // Set your desired maximum cache limit
-    const [cachedImageUrls, setCachedImageUrls] = useState({}); // Cache for image URLs
-  
+    const [maxCachedImages] = useState(50); 
+    const [cachedImageUrls, setCachedImageUrls] = useState({}); 
+    const modalizeRef = useRef(null);
+    const [selectedItem, setSelectedItem] = useState(null);
+
+
+    const onOpen = (item) => {
+      setSelectedItem(item); // Set the selected item
+      if (modalizeRef.current) {
+        modalizeRef.current.open();
+      }
+    };
+    const closeModal = () => {
+      modalizeRef.current?.close(); // Close the modal using its ref
+    };
+    
+
     const cacheImageUrl = (id, imageUrl) => {
       setCachedImageUrls((prevCache) => {
         const updatedCache = { ...prevCache, [id]: imageUrl };
@@ -52,15 +67,12 @@ const LessonScreen = ({ navigation }) => {
   
     const fetchRandomWordsAndImages = async () => {
       try {
-        setLoadingMore(true);
-    
         const numberOfWords = 5;
     
         const vocabData = require('./lib/vocab.json');
         const allWords = Object.values(vocabData).flat();
         const shuffledWords = shuffleArray(allWords);
         const wordsToFetch = new Set();
-    
         for (const word of shuffledWords) {
           if (wordsToFetch.size >= numberOfWords) {
             break;
@@ -70,15 +82,41 @@ const LessonScreen = ({ navigation }) => {
     
         const combinedFetchPromises = Array.from(wordsToFetch).map(async (word) => {
           try {
-            const response = await axios.get(`https://api.dictionaryapi.dev/api/v2/entries/en/${word}`);
+            const dictionaryResponse = await axios.get(`https://api.dictionaryapi.dev/api/v2/entries/en/${word}`);
     
-            if (response.data && response.data.length > 0) {
-              const wordData = response.data[0];
+            if (dictionaryResponse.data && dictionaryResponse.data.length > 0) {
+              setLoadingMore(true);
+              const wordData = dictionaryResponse.data[0];
+              console.log(wordData);
               const { word: apiWord, phonetic, phonetics } = wordData;
-              const audioUrl = phonetics && phonetics[0] && phonetics[0].audio
-                ? `https:${phonetics[0].audio}`
-                : null;
-              const wordPronunciation = phonetic || 'Unavailable';
+              let audioUrl = null;
+              let wordPronunciation = 'Unavailable';
+    
+              if (phonetics && phonetics.length > 0 && phonetics[0].audio) {
+                audioUrl = `https:${phonetics[0].audio}`;
+              }
+    
+              // Check if pronunciation is available in Dictionary API response
+              if (phonetic) {
+                wordPronunciation = phonetic;
+              } else {
+                // If phonetic pronunciation is null in Dictionary API, try WordsAPI
+                try {
+                  const wordsApiResponse = await axios.get(`https://wordsapiv1.p.rapidapi.com/words/${word}`, {
+                    headers: {
+                      'X-RapidAPI-Host': 'wordsapiv1.p.rapidapi.com',
+                      'X-RapidAPI-Key': 'a35d25fb98mshd2eb21dfb3d12aep16da25jsnb9e7d92258d1',
+                    },
+                  });
+    
+                  if (wordsApiResponse.data && wordsApiResponse.data.pronunciation) {
+                    wordPronunciation = `/${wordsApiResponse.data.pronunciation.all || wordsApiResponse.data.pronunciation}/`;
+                  }
+                } catch (wordsApiError) {
+                  // Handle the error if fetching from WordsAPI fails
+                }
+              }
+    
               const capitalizedWord = capitalizeFirstLetter(apiWord);
               const firstMeaning = wordData.meanings && wordData.meanings[0];
               const firstDefinition = firstMeaning
@@ -131,14 +169,13 @@ const LessonScreen = ({ navigation }) => {
         }, {});
     
         setImageUrls((prevImageUrls) => ({ ...prevImageUrls, ...imageURLs }));
-    
-        setLoadingMore(true); // Set loadingMore back to false when data fetching is done
       } catch (error) {
         console.error('Error fetching random words and images:', error);
         await SplashScreen.hideAsync();
-        setLoadingMore(true); // Handle error and set loadingMore back to false
       }
-    };    
+    };
+    
+       
     const placeholderWords = [
       'serenity', 'elegance', 'innovation', 'blossom', 'grace', 'inspiration'
     ];  
@@ -177,8 +214,6 @@ const LessonScreen = ({ navigation }) => {
 
                   return imageUrl;
               }
-
-              // If no photos were found or all were duplicates, try placeholder images
               // Shuffle the placeholderWords array to avoid using the same word repeatedly
               const shuffledWords = shuffleArray(placeholderWords);
 
@@ -532,57 +567,47 @@ const LessonScreen = ({ navigation }) => {
   const JAMENDO_API_KEY = 'aa92f003'; 
   const keyword = 'lofi';
   const maxOffset = 5; 
-  const playedSongs = []; 
 
   async function loadRandomMusicFromJamendo() {
-    let track = null;
+    try {
+      const offset = Math.floor(Math.random() * maxOffset);
 
-    while (!track) {
-      try {
-        const offset = Math.floor(Math.random() * maxOffset);
+      const JAMENDO_ENDPOINT = `https://api.jamendo.com/v3.0/tracks/?client_id=${JAMENDO_API_KEY}&limit=1&format=jsonpretty&search=${keyword}&offset=${offset}`;
 
-        const JAMENDO_ENDPOINT = `https://api.jamendo.com/v3.0/tracks/?client_id=${JAMENDO_API_KEY}&limit=1&format=jsonpretty&search=${keyword}&offset=${offset}`;
-
-        const response = await axios.get(JAMENDO_ENDPOINT);
-        if (response.data.results.length === 0) {
-          console.error(`No songs found for keyword: ${keyword}`);
-          break;
-        }
-        track = response.data.results[0];
-
-        if (track && track.audio && !playedSongs.includes(track.id)) {
-          playedSongs.push(track.id); // Add the song id to the playedSongs array
-        
-          const { sound } = await Audio.Sound.createAsync({ uri: track.audio });
-          setSound(sound);
-          await sound.playAsync();
-        
-          // Get the song name, artist name, and album art
-          const songName = track.name;
-          const artistName = track.artist_name;
-          const albumArtUrl = track.image;
-        
-          // Update the songName and artistName state variables
-          setSongName(songName);
-          setArtistName(artistName);
-          setAlbumArt(albumArtUrl);
-        
-          // Reset and start the animation
-          // resetAndStartAnimation();
-        
-          // Add an event listener to detect when the current song ends
-          sound.setOnPlaybackStatusUpdate(async (status) => {
-            if (status.didJustFinish) {
-              // If the song ended, load and play a new random song
-              await loadRandomMusicFromJamendo();
-            }
-          });
-        } else {
-          console.error('No audio track found in Jamendo response or song already played. Retrying...');
-        }
-      } catch (error) {
-        console.error('Error fetching track from Jamendo:', error);
+      const response = await axios.get(JAMENDO_ENDPOINT);
+      if (response.data.results.length === 0) {
+        console.error(`No songs found for keyword: ${keyword}`);
+        return;
       }
+      const track = response.data.results[0];
+
+      if (track && track.audio) {
+        const { sound } = await Audio.Sound.createAsync({ uri: track.audio });
+        setSound(sound);
+        await sound.playAsync();
+
+        // Get the song name, artist name, and album art
+        const songName = track.name;
+        const artistName = track.artist_name;
+        const albumArtUrl = track.image;
+
+        // Update the songName and artistName state variables
+        setSongName(songName);
+        setArtistName(artistName);
+        setAlbumArt(albumArtUrl);
+
+        // Add an event listener to detect when the current song ends
+        sound.setOnPlaybackStatusUpdate(async (status) => {
+          if (status.didJustFinish) {
+            // If the song ended, load and play a new random song
+            loadRandomMusicFromJamendo();
+          }
+        });
+      } else {
+        console.error('No audio track found in Jamendo response. Retrying...');
+      }
+    } catch (error) {
+      console.error('Error fetching track from Jamendo:', error);
     }
   }
   
@@ -639,6 +664,7 @@ const LessonScreen = ({ navigation }) => {
             <View style={styles.wordContainer}>
                 <Text style={styles.word}>{item.word}</Text>
                 <Text style={styles.partOfSpeech}>({item.partOfSpeech})</Text>
+                <Icon name="check-circle" size={18} color="#9BBFE7" style={styles.checkIcon}/>
                     {item.audioUrl ? (
                         <TouchableOpacity onPress={() => playPronunciation(item.audioUrl)}>
                             <Icon name="volume-up" size={25} color="#fff" style={styles.speakerIcon} />
@@ -679,8 +705,15 @@ const LessonScreen = ({ navigation }) => {
         <TouchableOpacity style={styles.translationContainer} >
           <Text style={styles.Translation}>See translation</Text>
         </TouchableOpacity>
+
         <View style={styles.currentSongContainer}>
-            <Icon name="music" size={16} color="#ccc" style={styles.musicNoteIcon} />
+        <TouchableOpacity onPress={pauseMusic}>
+          {isPlaying ? (
+            <Icon name="pause" size={16} color="#ccc" style={styles.musicNoteIcon} />
+          ) : (
+            <Icon name="play" size={16} color="#ccc" style={styles.musicNoteIcon} />
+          )}
+        </TouchableOpacity>
             <TextTicker
               duration={12000} 
               loop
@@ -715,7 +748,7 @@ const LessonScreen = ({ navigation }) => {
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.commentButton}
-              onPress={() => shareWord(item.word, item.pronunciation, item.meaning, item.partOfSpeech)}
+              onPress={() => onOpen(item)} // Pass the current item to onOpen
             >
               <View style={styles.iconTextContainer}>
                 <Icon name="comment" size={28} color="#fff" />
@@ -733,7 +766,7 @@ const LessonScreen = ({ navigation }) => {
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.discButton}
-              onPress={pauseMusic}
+              onPress={loadRandomMusicFromJamendo}
             >
               <Animated.View
                   style={{
@@ -766,6 +799,7 @@ const LessonScreen = ({ navigation }) => {
             )}
         </ImageBackground>
         </TouchableWithoutFeedback>
+        
       </View>
     );
   };
@@ -811,7 +845,7 @@ const LessonScreen = ({ navigation }) => {
           onEndReached={fetchRandomWordsAndImages}
           onEndReachedThreshold={4} 
           ListFooterComponent={() => (
-            <View style={{ paddingTop: 10 }}>
+            <View style={{ padding: 5 }}>
               {loadingMore && vocabularyData.length > 0 ? (
                 <ActivityIndicator size={30} color="#fff" />
               ) : null}
@@ -840,6 +874,37 @@ const LessonScreen = ({ navigation }) => {
         </View>
       ) : null}
       </ScrollView>
+       <Modalize
+          ref={modalizeRef}
+          modalStyle={{ backgroundColor: '#121212' }}
+          modalHeight={700}
+          handlePosition="inside"
+          handleStyle={{ backgroundColor: '#121212' }}
+          
+        >
+        {selectedItem ? (
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalWordText}>{selectedItem.word}:</Text>
+              <Text style={styles.modalPronunciationText}>{selectedItem.pronunciation}</Text>
+              <TouchableOpacity onPress={closeModal} style={styles.closeButton}>
+                <Icon name="close" size={24} color="#ccc" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.underline} />
+             <View style={styles.commentContainer}>
+                <Icon name="paw" size={20} color="#fff" style={styles.commentIcon} />
+                <View style={styles.commentTextContainer}>
+                  <Text style={styles.modalPartOfSpeech}>Definition ({selectedItem.partOfSpeech}):</Text>
+                  <Text style={styles.modalMeaningText}>{selectedItem.meaning}</Text>
+                </View>
+              </View>
+          </View>
+        ) : (
+          <Text style={styles.modalText}>No item selected</Text>
+        )}
+      </Modalize>
+
       <SafeAreaView style={styles.tabBar}>
         {tabs.map((tab, index) => renderTab(tab, index))}
       </SafeAreaView>
@@ -946,11 +1011,11 @@ const styles = StyleSheet.create({
     flexDirection: 'column', 
     justifyContent: 'flex-end', 
     alignItems: 'flex-start',
-    bottom: 30,
+    bottom: 40,
     left: 15,
   },
   word: {
-    fontSize: 30,
+    fontSize: 25,
     fontWeight: 'bold',
     color: '#fff',
   },
@@ -967,15 +1032,18 @@ const styles = StyleSheet.create({
   speakerIcon: {
     marginLeft: 10,
   },
+  checkIcon:{
+    marginLeft: 10,
+  },
   pronunciation: {
     marginTop: 5,
-    fontSize: 18,
+    fontSize: 16,
     color: '#fff',
   },
   meaningContainer:{
     marginTop: 5,
     flexDirection: 'row', 
-    bottom: 30,
+    bottom: 40,
     left: 15,
     width: 280,
   },
@@ -987,7 +1055,7 @@ const styles = StyleSheet.create({
   },
   translationContainer: {
     marginTop: 10,
-    bottom: 30,
+    bottom: 40,
     left: 15,
     width: 130,
   },
@@ -1000,14 +1068,15 @@ const styles = StyleSheet.create({
   currentSongContainer: {
     flexDirection: 'row', 
     alignItems: 'center',
-    bottom: 30,
+    justifyContent: 'center',
+    bottom: 40,
     left: 15,
     marginTop: 20, 
     backgroundColor: "rgba(136, 136, 136, 0.5)",
     borderRadius: 20,
     width: 230,
     paddingVertical: 5,
-    paddingHorizontal: 10,
+    paddingHorizontal: 15,
   },
   musicNoteIcon: {
     marginRight: 10,
@@ -1019,7 +1088,7 @@ const styles = StyleSheet.create({
   },
   sideButtonContainer: {
     position: 'absolute',
-    bottom: 30,
+    bottom: 38,
     right: 10,
     flexDirection: 'column',
     alignItems: 'center',
@@ -1034,6 +1103,64 @@ const styles = StyleSheet.create({
   },
   commentButton: {
     marginTop: 30,
+  },
+  modalContent: {
+    paddingVertical: 20,
+    borderRadius: 10, // Adjust the border radius as needed
+  },
+  modalHeader: {
+    flexDirection: 'columnx',
+    alignContent: 'center',
+  },
+  modalWordText: {
+    paddingHorizontal: 20,
+    fontSize: 25,
+    fontWeight: 'bold',
+    color: '#9BBFE7',
+  },
+  
+  modalPronunciationText: {
+    fontSize: 16,
+    color: '#fff',
+    paddingHorizontal: 20,
+  },
+  closeButton: {
+    position: 'absolute',
+    top: 15,
+    right: 20, // Adjust the right value to position it where you want
+  },
+  underline: {
+    height: 2, 
+    backgroundColor: '#666', 
+    marginVertical: 15,
+  },
+  commentContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 10, 
+  },
+  commentIcon: {
+    marginRight: 0,
+    marginLeft: 20,
+    marginTop: 15,
+    backgroundColor: '#9BBFE7',
+    padding: 10,
+    borderRadius: 50,
+  },
+  commentTextContainer: {
+    flex: 1, 
+    paddingHorizontal: 15,
+  },
+  modalPartOfSpeech:{
+    marginTop: 10,
+    fontSize: 16,
+    color: '#8E8E8E',
+    marginBottom: 5,
+  },
+  modalMeaningText: {
+    fontSize: 16,
+    lineHeight: 20,
+    color: '#ccc',
   },
   shareButton: {
     marginTop: 30,
