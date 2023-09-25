@@ -14,6 +14,8 @@ import { Modalize } from 'react-native-modalize';
 const tabs = ['For You', 'Liked']; 
 const client = createClient('XoJwUYOzKMoDE3chOvLGeDqEoSdDtUNseGnCEnIQB4n2V3Te2lMlQLHS');
 SplashScreen.preventAutoHideAsync();
+const iconsArray = ['heart', 'paw', 'star', 'bell', 'paw', 'coffee', 'leaf', 'moon-o'];
+
 
 const LessonScreen = ({ navigation }) => {      
     const flatListRef = useRef(null);
@@ -44,6 +46,10 @@ const LessonScreen = ({ navigation }) => {
     const closeModal = () => {
       modalizeRef.current?.close(); // Close the modal using its ref
     };
+    const getRandomIcon = () => {
+      const randomIndex = Math.floor(Math.random() * iconsArray.length);
+      return iconsArray[randomIndex];
+    };
     
 
     const cacheImageUrl = (id, imageUrl) => {
@@ -67,12 +73,14 @@ const LessonScreen = ({ navigation }) => {
   
     const fetchRandomWordsAndImages = async () => {
       try {
-        const numberOfWords = 5;
+        setLoadingMore(true);
     
+        const numberOfWords = 5;
         const vocabData = require('./lib/vocab.json');
         const allWords = Object.values(vocabData).flat();
         const shuffledWords = shuffleArray(allWords);
         const wordsToFetch = new Set();
+    
         for (const word of shuffledWords) {
           if (wordsToFetch.size >= numberOfWords) {
             break;
@@ -82,51 +90,43 @@ const LessonScreen = ({ navigation }) => {
     
         const combinedFetchPromises = Array.from(wordsToFetch).map(async (word) => {
           try {
-            const dictionaryResponse = await axios.get(`https://api.dictionaryapi.dev/api/v2/entries/en/${word}`);
+            const response = await axios.get(`https://api.dictionaryapi.dev/api/v2/entries/en/${word}`);
     
-            if (dictionaryResponse.data && dictionaryResponse.data.length > 0) {
-              setLoadingMore(true);
-              const wordData = dictionaryResponse.data[0];
-              console.log(wordData);
+            if (response.data && response.data.length > 0) {
+              const wordData = response.data[0];
               const { word: apiWord, phonetic, phonetics } = wordData;
-              let audioUrl = null;
-              let wordPronunciation = 'Unavailable';
-    
-              if (phonetics && phonetics.length > 0 && phonetics[0].audio) {
-                audioUrl = `https:${phonetics[0].audio}`;
-              }
-    
-              // Check if pronunciation is available in Dictionary API response
-              if (phonetic) {
-                wordPronunciation = phonetic;
-              } else {
-                // If phonetic pronunciation is null in Dictionary API, try WordsAPI
-                try {
-                  const wordsApiResponse = await axios.get(`https://wordsapiv1.p.rapidapi.com/words/${word}`, {
-                    headers: {
-                      'X-RapidAPI-Host': 'wordsapiv1.p.rapidapi.com',
-                      'X-RapidAPI-Key': 'a35d25fb98mshd2eb21dfb3d12aep16da25jsnb9e7d92258d1',
-                    },
-                  });
-    
-                  if (wordsApiResponse.data && wordsApiResponse.data.pronunciation) {
-                    wordPronunciation = `/${wordsApiResponse.data.pronunciation.all || wordsApiResponse.data.pronunciation}/`;
-                  }
-                } catch (wordsApiError) {
-                  // Handle the error if fetching from WordsAPI fails
-                }
-              }
-    
+              const audioUrl = phonetics && phonetics[0] && phonetics[0].audio
+                ? `https:${phonetics[0].audio}`
+                : null;
+                const wordPronunciation = phonetics && phonetics[0] && phonetics[0].text
+                ? phonetics[0].text
+                : 'Unavailable';
+              
               const capitalizedWord = capitalizeFirstLetter(apiWord);
-              const firstMeaning = wordData.meanings && wordData.meanings[0];
-              const firstDefinition = firstMeaning
-                ? capitalizeFirstLetter(firstMeaning.definitions[0].definition)
-                : 'Unavailable';
-              const firstPartOfSpeech = firstMeaning
-                ? formatPartOfSpeech(firstMeaning.partOfSpeech)
+    
+              const allDefinitions = [];
+              const allExamples = [];
+              const allPartOfSpeech = [];
+    
+              if (wordData.meanings) {
+                wordData.meanings.forEach(meaning => {
+                  const partOfSpeech = meaning.partOfSpeech;
+
+                  if (meaning.definitions) {
+                    meaning.definitions.forEach(def => {
+                      allDefinitions.push(def.definition);
+                      allExamples.push(def.example || null);
+                      allPartOfSpeech.push(formatPartOfSpeech(partOfSpeech));
+                    });
+                  }
+                });
+              }
+              
+              const firstDefinition = allDefinitions[0] || 'Unavailable';
+              const firstPartOfSpeech = wordData.meanings && wordData.meanings[0]
+                ? formatPartOfSpeech(wordData.meanings[0].partOfSpeech)
                 : 'Unavailable';
     
-              // Fetch image for the current word
               const imageUrl = await fetchImage(word);
               await SplashScreen.hideAsync();
     
@@ -138,6 +138,9 @@ const LessonScreen = ({ navigation }) => {
                 pronunciation: wordPronunciation,
                 imageUrl: imageUrl,
                 audioUrl: audioUrl,
+                allDefinitions,
+                allExamples,
+                allPartOfSpeech
               };
             } else {
               return null;
@@ -150,18 +153,7 @@ const LessonScreen = ({ navigation }) => {
         const combinedResponses = await Promise.all(combinedFetchPromises);
         const validResponses = combinedResponses.filter((response) => response !== null);
     
-        const newVocabulary = validResponses.map((item) => {
-          return {
-            id: item.id,
-            word: item.word,
-            meaning: item.meaning,
-            partOfSpeech: item.partOfSpeech,
-            pronunciation: item.pronunciation,
-            audioUrl: item.audioUrl,
-          };
-        });
-    
-        setVocabularyData((prevVocabularyData) => [...prevVocabularyData, ...newVocabulary]);
+        setVocabularyData((prevVocabularyData) => [...prevVocabularyData, ...validResponses]);
     
         const imageURLs = validResponses.reduce((acc, curr) => {
           acc[curr.id] = curr.imageUrl;
@@ -169,13 +161,14 @@ const LessonScreen = ({ navigation }) => {
         }, {});
     
         setImageUrls((prevImageUrls) => ({ ...prevImageUrls, ...imageURLs }));
+    
+        setLoadingMore(true);  // Set loadingMore back to false when data fetching is done
       } catch (error) {
         console.error('Error fetching random words and images:', error);
-        await SplashScreen.hideAsync();
+        setLoadingMore(true);  // Handle error and set loadingMore back to false
       }
     };
-    
-       
+
     const placeholderWords = [
       'serenity', 'elegance', 'innovation', 'blossom', 'grace', 'inspiration'
     ];  
@@ -667,11 +660,11 @@ const LessonScreen = ({ navigation }) => {
                 <Icon name="check-circle" size={18} color="#9BBFE7" style={styles.checkIcon}/>
                     {item.audioUrl ? (
                         <TouchableOpacity onPress={() => playPronunciation(item.audioUrl)}>
-                            <Icon name="volume-up" size={25} color="#fff" style={styles.speakerIcon} />
+                            <Icon name="volume-up" size={22} color="#fff" style={styles.speakerIcon} />
                         </TouchableOpacity>
                     ) : (
                         <View style={styles.disabledSpeakerIcon}>
-                            <Icon name="volume-up" size={25} color="#999" style={styles.speakerIcon} />
+                            <Icon name="volume-up" size={22} color="#999" style={styles.speakerIcon} />
                         </View>
                     )}
             </View>
@@ -748,7 +741,7 @@ const LessonScreen = ({ navigation }) => {
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.commentButton}
-              onPress={() => onOpen(item)} // Pass the current item to onOpen
+              onPress={() => onOpen(item)} 
             >
               <View style={styles.iconTextContainer}>
                 <Icon name="comment" size={28} color="#fff" />
@@ -771,7 +764,6 @@ const LessonScreen = ({ navigation }) => {
               <Animated.View
                   style={{
                       ...styles.iconTextContainer,
-                      // transform: [{ rotate: spin }]
                   }}
               >
                   <Image style={styles.discImage} source={require('./img/disc.png')}></Image>
@@ -779,6 +771,7 @@ const LessonScreen = ({ navigation }) => {
                       style={styles.albumImage}
                       source={albumArt ? { uri: albumArt } : null}
                   />
+                  <Icon name="forward" size={10} color="#fff" style={styles.skipSong} />
               </Animated.View>
             </TouchableOpacity>
             </View>
@@ -836,7 +829,7 @@ const LessonScreen = ({ navigation }) => {
           keyExtractor={(item) => item.id.toString()}
           initialNumToRender={5} 
           maxToRenderPerBatch={5} 
-          windowSize={5}
+          windowSize={3}
           removeClippedSubviews={true}
           extraData={[likedItems]}
           showsVerticalScrollIndicator={false}
@@ -865,6 +858,7 @@ const LessonScreen = ({ navigation }) => {
                 showsVerticalScrollIndicator={false}
                 removeClippedSubviews={true}
                 pagingEnabled={true}
+                windowSize={2}
                 decelerationRate={'fast'}
               />
             ) : (
@@ -874,14 +868,13 @@ const LessonScreen = ({ navigation }) => {
         </View>
       ) : null}
       </ScrollView>
-       <Modalize
-          ref={modalizeRef}
-          modalStyle={{ backgroundColor: '#121212' }}
-          modalHeight={700}
-          handlePosition="inside"
-          handleStyle={{ backgroundColor: '#121212' }}
-          
-        >
+      <Modalize
+        ref={modalizeRef}
+        modalStyle={{ backgroundColor: '#121212' }}
+        modalHeight={700}
+        handlePosition="inside"
+        handleStyle={{ backgroundColor: '#666' }}
+      >
         {selectedItem ? (
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
@@ -892,13 +885,27 @@ const LessonScreen = ({ navigation }) => {
               </TouchableOpacity>
             </View>
             <View style={styles.underline} />
-             <View style={styles.commentContainer}>
-                <Icon name="paw" size={20} color="#fff" style={styles.commentIcon} />
+
+            {selectedItem.allPartOfSpeech.map((partOfSpeech, index) => (
+              <View key={index} style={styles.commentContainer}>
+                <Icon name={getRandomIcon()} size={20} color="#fff" style={styles.commentIcon} />
                 <View style={styles.commentTextContainer}>
-                  <Text style={styles.modalPartOfSpeech}>Definition ({selectedItem.partOfSpeech}):</Text>
-                  <Text style={styles.modalMeaningText}>{selectedItem.meaning}</Text>
+                  <Text style={styles.modalPartOfSpeech}>Definition ({partOfSpeech}): </Text>
+                  <Text style={styles.modalMeaningText}>
+                    {selectedItem.allDefinitions[index]}
+                  </Text>
+                  {selectedItem.allExamples[index] && (
+                    <View style={{ flexDirection: 'row' }}>
+                      <View style={{ borderLeftWidth: 2, borderColor: '#9BBFE7', paddingLeft: 5, marginTop: 5 }}>
+                        <Text style={styles.modalExampleText}>
+                          Example: {selectedItem.allExamples[index]}
+                        </Text>
+                      </View>
+                    </View>
+                  )}
                 </View>
               </View>
+            ))}
           </View>
         ) : (
           <Text style={styles.modalText}>No item selected</Text>
@@ -927,7 +934,7 @@ const styles = StyleSheet.create({
     right: 0,
   },
   tab: {
-    paddingHorizontal: 18,
+    paddingHorizontal: 15,
   },
   tabText: {
     fontWeight: 'bold',
@@ -1027,7 +1034,7 @@ const styles = StyleSheet.create({
   },
   wordContainer: {
     flexDirection: 'row',
-    alignItems: 'center', 
+    alignItems: 'baseline', 
   },
   speakerIcon: {
     marginLeft: 10,
@@ -1088,7 +1095,7 @@ const styles = StyleSheet.create({
   },
   sideButtonContainer: {
     position: 'absolute',
-    bottom: 38,
+    bottom: 48,
     right: 10,
     flexDirection: 'column',
     alignItems: 'center',
@@ -1137,7 +1144,8 @@ const styles = StyleSheet.create({
   commentContainer: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    marginBottom: 10, 
+    marginBottom: 20, 
+
   },
   commentIcon: {
     marginRight: 0,
@@ -1162,6 +1170,13 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     color: '#ccc',
   },
+  modalExampleText: {
+    fontSize: 16,
+    lineHeight: 20,
+    color: '#ccc',
+    padding: 5,
+    borderRadius: 10,
+  },
   shareButton: {
     marginTop: 30,
   },
@@ -1179,6 +1194,14 @@ const styles = StyleSheet.create({
     width: 25, 
     height: 25, 
     borderRadius: 35,
+  },
+  skipSong: {
+    position: 'absolute',
+    top: 35,
+    left: 16,
+    backgroundColor: '#9BBFE7',
+    borderRadius: 20,
+    padding: 6,
   },
   buttonText: {
     color: '#fff',
