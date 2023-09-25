@@ -10,6 +10,7 @@ import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import TextTicker from 'react-native-text-ticker'
 import { Modalize } from 'react-native-modalize';
+import { FlashList } from "@shopify/flash-list";
 
 const tabs = ['For You', 'Liked']; 
 const client = createClient('XoJwUYOzKMoDE3chOvLGeDqEoSdDtUNseGnCEnIQB4n2V3Te2lMlQLHS');
@@ -96,12 +97,11 @@ const LessonScreen = ({ navigation }) => {
               const wordData = response.data[0];
               const { word: apiWord, phonetic, phonetics } = wordData;
               const audioUrl = phonetics && phonetics[0] && phonetics[0].audio
-                ? `https:${phonetics[0].audio}`
+                ? `${phonetics[0].audio}`
                 : null;
                 const wordPronunciation = phonetics && phonetics[0] && phonetics[0].text
                 ? phonetics[0].text
                 : 'Unavailable';
-              
               const capitalizedWord = capitalizeFirstLetter(apiWord);
     
               const allDefinitions = [];
@@ -486,13 +486,31 @@ const LessonScreen = ({ navigation }) => {
     };    
     const playPronunciation = async (audioUrl) => {
       try {
-          const sound = new Audio.Sound();
-          await sound.loadAsync({ uri: audioUrl });
-          await sound.playAsync();
-      } catch (error) {
-          console.error('Error playing pronunciation audio:', error);
-      }
-  };
+          if (sound && isPlaying) {
+                await sound.pauseAsync();
+                setIsPlaying(false);
+            }
+    
+            const pronunciationSound = new Audio.Sound();
+            await pronunciationSound.loadAsync({ uri: audioUrl });
+            await pronunciationSound.playAsync();
+    
+            // Listen to when the pronunciation playback finishes
+            pronunciationSound.setOnPlaybackStatusUpdate(async (status) => {
+                if (status.didJustFinish) {
+                    if (sound) {
+                        await sound.playAsync();
+                        setIsPlaying(true);
+                    }
+                    pronunciationSound.setOnPlaybackStatusUpdate(null); // Remove the event listener
+                    await pronunciationSound.unloadAsync();
+                }
+            });
+        } catch (error) {
+            console.error('Error playing pronunciation audio:', error);
+        }
+    };
+  
   const handleTextLayout = (event, index) => {
     const { lines } = event.nativeEvent;
     const isOverflowing = lines.length > 2;
@@ -806,6 +824,7 @@ const LessonScreen = ({ navigation }) => {
       AsyncStorage.setItem('newLikedItemsAdded', 'false');
     }
   }, []);
+  
 
   return (
     <View style={styles.container}>
@@ -821,14 +840,13 @@ const LessonScreen = ({ navigation }) => {
           <ActivityIndicator size="large" color="#fff" />
         </View>
       ) : (
-          <FlatList
+        <View style={{ height: Dimensions.get('window').height + StatusBar.currentHeight, width: Dimensions.get("screen").width }}>
+          <FlashList
           on
           ref={flatListRef}
           data={vocabularyData}
           renderItem={renderItem}
           keyExtractor={(item) => item.id.toString()}
-          initialNumToRender={5} 
-          maxToRenderPerBatch={5} 
           windowSize={3}
           removeClippedSubviews={true}
           extraData={[likedItems]}
@@ -837,6 +855,7 @@ const LessonScreen = ({ navigation }) => {
           decelerationRate={'fast'} 
           onEndReached={fetchRandomWordsAndImages}
           onEndReachedThreshold={4} 
+          estimatedItemSize={868}
           ListFooterComponent={() => (
             <View style={{ padding: 5 }}>
               {loadingMore && vocabularyData.length > 0 ? (
@@ -845,13 +864,14 @@ const LessonScreen = ({ navigation }) => {
             </View>
           )}
          />
-         
+         </View>
     )}  
       {vocabularyData.length > 0 && loadingMore ? (
         <View style={styles.cardContainer}>
           <View style={styles.likedContainer}>
             {likedItemsFromStorage.length > 0 ? (
-              <FlatList
+                <View style={{ height: Dimensions.get('window').height + StatusBar.currentHeight, width: Dimensions.get("screen").width }}>
+              <FlashList
                 data={likedItemsFromStorage}
                 renderItem={renderItem}
                 keyExtractor={(item) => item.id.toString()}
@@ -859,8 +879,10 @@ const LessonScreen = ({ navigation }) => {
                 removeClippedSubviews={true}
                 pagingEnabled={true}
                 windowSize={2}
+                estimatedItemSize={868}
                 decelerationRate={'fast'}
               />
+              </View>
             ) : (
               <Text style={styles.noLikedText}>Oops! Nothing here yet 🙁</Text>
             )}

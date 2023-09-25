@@ -13,6 +13,7 @@
     "@react-navigation/material-top-tabs": "^6.6.3",
     "@react-navigation/native": "^6.1.7",
     "@react-navigation/stack": "^6.3.17",
+    "@shopify/flash-list": "^1.6.1",
     "@thevsstech/react-native-skeleton": "^2.0.11",
     "axios": "^1.4.0",
     "expo": "~49.0.6",
