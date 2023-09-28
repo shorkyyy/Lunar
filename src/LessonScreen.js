@@ -15,7 +15,7 @@ import { FlashList } from "@shopify/flash-list";
 const tabs = ['For You', 'Liked']; 
 const client = createClient('XoJwUYOzKMoDE3chOvLGeDqEoSdDtUNseGnCEnIQB4n2V3Te2lMlQLHS');
 SplashScreen.preventAutoHideAsync();
-const iconsArray = ['heart', 'paw', 'star', 'bell', 'paw', 'coffee', 'leaf', 'moon-o'];
+const iconsArray = ['heart', 'paw', 'star', 'bell', 'paw', 'coffee', 'leaf'];
 
 
 const LessonScreen = ({ navigation }) => {      
@@ -36,22 +36,27 @@ const LessonScreen = ({ navigation }) => {
     const [cachedImageUrls, setCachedImageUrls] = useState({}); 
     const modalizeRef = useRef(null);
     const [selectedItem, setSelectedItem] = useState(null);
+    const iconRef = useRef(null);
+    const [translatedMeaning, setTranslatedMeaning] = useState({ id: null, text: null });
 
 
     const onOpen = (item) => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       setSelectedItem(item); // Set the selected item
       if (modalizeRef.current) {
         modalizeRef.current.open();
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        
       }
     };
     const closeModal = () => {
       modalizeRef.current?.close(); // Close the modal using its ref
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     };
-    const getRandomIcon = () => {
+    const getRandomIcon = useCallback(() => {
       const randomIndex = Math.floor(Math.random() * iconsArray.length);
       return iconsArray[randomIndex];
-    };
-    
+    }, []);
 
     const cacheImageUrl = (id, imageUrl) => {
       setCachedImageUrls((prevCache) => {
@@ -101,7 +106,7 @@ const LessonScreen = ({ navigation }) => {
                 : null;
                 const wordPronunciation = phonetics && phonetics[0] && phonetics[0].text
                 ? phonetics[0].text
-                : 'Unavailable';
+                : '/Unavailable/';
               const capitalizedWord = capitalizeFirstLetter(apiWord);
     
               const allDefinitions = [];
@@ -365,7 +370,8 @@ const LessonScreen = ({ navigation }) => {
                 heartOpacity.setValue(1);
                 setCurrentLikedItem(null);
                 setHeartAnimationActive(false); // Reset animation active
-              });
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              }); 
             }, 600);
     
             // Check if the item is already liked
@@ -416,57 +422,53 @@ const LessonScreen = ({ navigation }) => {
       }),
     ]).start();
   };
-  const toggleLike = useCallback(async (item) => {
+  async function toggleLike(item) {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const isLiked = likedItems.includes(item.id);
   
+    let updatedLikedItems;
     if (isLiked) {
-      const updatedLikedItems = likedItems.filter((id) => id !== item.id);
-      setLikedItems(updatedLikedItems);
-  
-      try {
-        const storedLikedItems = await AsyncStorage.getItem('likedItems');
-        if (storedLikedItems) {
-          const parsedLikedItems = JSON.parse(storedLikedItems);
-          const updatedStoredLikedItems = parsedLikedItems.filter(
-            (storedItem) => storedItem.id !== item.id
-          );
-          await AsyncStorage.setItem(
-            'likedItems',
-            JSON.stringify(updatedStoredLikedItems)
-          );
-
-          await AsyncStorage.setItem('newLikedItemsAdded', 'false');
-          setNewLikedItemsAdded(false);
-        }
-      } catch (error) {
-        console.error('Error removing liked item from AsyncStorage:', error);
-      }
+      updatedLikedItems = likedItems.filter((id) => id !== item.id);
     } else {
       startHeartBeatAnimation();
-      setLikedItems([...likedItems, item.id]);
-      try {
-        const storedLikedItems = await AsyncStorage.getItem('likedItems');
-        const parsedLikedItems = storedLikedItems ? JSON.parse(storedLikedItems) : [];
+      updatedLikedItems = [...likedItems, item.id];
+    }
+  
+    // Optimistically update state
+    setLikedItems(updatedLikedItems);
+  
+    try {
+      const storedLikedItems = await AsyncStorage.getItem('likedItems');
+      const parsedLikedItems = storedLikedItems ? JSON.parse(storedLikedItems) : [];
+      let updatedStoredLikedItems;
+  
+      if (isLiked) {
+        updatedStoredLikedItems = parsedLikedItems.filter(
+          (storedItem) => storedItem.id !== item.id
+        );
+        await AsyncStorage.setItem('newLikedItemsAdded', 'false');
+        setNewLikedItemsAdded(false);
+      } else {
         const itemWithImageUrl = {
           ...item,
           imageUrl: imageUrls[item.id],
         };
-  
-        const updatedStoredLikedItems = [...parsedLikedItems, itemWithImageUrl];
-        await AsyncStorage.setItem(
-          'likedItems',
-          JSON.stringify(updatedStoredLikedItems)
-        );
-  
-        // Set newLikedItemsAdded to true
+        updatedStoredLikedItems = [...parsedLikedItems, itemWithImageUrl];
         await AsyncStorage.setItem('newLikedItemsAdded', 'true');
         setNewLikedItemsAdded(true);
-      } catch (error) {
-        console.error('Error saving liked item to AsyncStorage:', error);
       }
+  
+      await AsyncStorage.setItem(
+        'likedItems',
+        JSON.stringify(updatedStoredLikedItems)
+      );
+    } catch (error) {
+      console.error('Error updating AsyncStorage:', error);
+      // Revert state if AsyncStorage operation fails
+      setLikedItems(likedItems);
     }
-  });  
+  }
+  
     const shareWord = (word, pronunciation, meaning, partOfSpeech) => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)
       Share.share({
@@ -486,41 +488,58 @@ const LessonScreen = ({ navigation }) => {
     };    
     const playPronunciation = async (audioUrl) => {
       try {
-          if (sound && isPlaying) {
-                await sound.pauseAsync();
-                setIsPlaying(false);
-            }
+        const backgroundMusicWasPlaying = sound && isPlaying;
     
-            const pronunciationSound = new Audio.Sound();
-            await pronunciationSound.loadAsync({ uri: audioUrl });
-            await pronunciationSound.playAsync();
-    
-            // Listen to when the pronunciation playback finishes
-            pronunciationSound.setOnPlaybackStatusUpdate(async (status) => {
-                if (status.didJustFinish) {
-                    if (sound) {
-                        await sound.playAsync();
-                        setIsPlaying(true);
-                    }
-                    pronunciationSound.setOnPlaybackStatusUpdate(null); // Remove the event listener
-                    await pronunciationSound.unloadAsync();
-                }
-            });
-        } catch (error) {
-            console.error('Error playing pronunciation audio:', error);
+        if (backgroundMusicWasPlaying) {
+          // If background music was playing, pause it
+          await sound.pauseAsync();
+          setIsPlaying(false);
         }
-    };
-  
-  const handleTextLayout = (event, index) => {
-    const { lines } = event.nativeEvent;
-    const isOverflowing = lines.length > 2;
     
-    setOverflowingItems((prevOverflowingItems) => ({
-      ...prevOverflowingItems,
-      [index]: isOverflowing,
-    }));
-  };
-  
+        const pronunciationSound = new Audio.Sound();
+        await pronunciationSound.loadAsync({ uri: audioUrl });
+        await pronunciationSound.playAsync();
+    
+        // Listen to when the pronunciation playback finishes
+        pronunciationSound.setOnPlaybackStatusUpdate(async (status) => {
+          if (status.didJustFinish) {
+            // Playback of pronunciation audio finished
+            if (backgroundMusicWasPlaying) {
+              // If background music was playing, resume it
+              await sound.playAsync();
+              setIsPlaying(true);
+            }
+            pronunciationSound.setOnPlaybackStatusUpdate(null); // Remove the event listener
+            await pronunciationSound.unloadAsync();
+          }
+        });
+      } catch (error) {
+        console.error('Error playing pronunciation audio:', error);
+      }
+    };
+    
+    const handleTextLayout = (event, index) => {
+      const { lines } = event.nativeEvent;
+      if (lines.length > 2) {
+        setOverflowingItems(prev => {
+          if (!prev[index]) {
+            return { ...prev, [index]: true };
+          }
+          return prev;
+        });
+      } else {
+        setOverflowingItems(prev => {
+          if (prev[index]) {
+            const newState = { ...prev };
+            delete newState[index];
+            return newState;
+          }
+          // If it's not marked as overflowing, keep the state as it is
+          return prev;
+        });
+      }
+    };
+    
   const fetchLikedItems = async () => {
     try {
       const storedLikedItems = await AsyncStorage.getItem('likedItems');
@@ -565,10 +584,12 @@ const LessonScreen = ({ navigation }) => {
     },
   };
   
-  const toggleExpansion = (index) => {
+  const toggleExpansion = (itemId) => {
     LayoutAnimation.configureNext(customAnimationConfig);
-    setExpandedItem(index === expandedItem ? null : index);
+    setExpandedItem(prev => (prev === itemId ? null : itemId));
   };
+  
+  
   
   const [sound, setSound] = useState(null);
   const [songName, setSongName] = useState('');
@@ -576,15 +597,23 @@ const LessonScreen = ({ navigation }) => {
   const [albumArt, setAlbumArt] = useState('');
 
   const JAMENDO_API_KEY = 'aa92f003'; 
-  const keyword = 'lofi';
+  const keyword = 'guitar';
   const maxOffset = 5; 
-
+  let playedSongs = []; // Keep track of played songs
+  
   async function loadRandomMusicFromJamendo() {
     try {
-      const offset = Math.floor(Math.random() * maxOffset);
-
+      let offset;
+      do {
+        offset = Math.floor(Math.random() * maxOffset);
+      } while (playedSongs.includes(offset)); // Generate a new offset if the song has already been played
+  
+      playedSongs.push(offset); // Add the offset to the list of played songs
+      if (playedSongs.length > maxOffset) {
+        playedSongs.shift(); // Remove the oldest song when the list is full
+      }
+  
       const JAMENDO_ENDPOINT = `https://api.jamendo.com/v3.0/tracks/?client_id=${JAMENDO_API_KEY}&limit=1&format=jsonpretty&search=${keyword}&offset=${offset}`;
-
       const response = await axios.get(JAMENDO_ENDPOINT);
       if (response.data.results.length === 0) {
         console.error(`No songs found for keyword: ${keyword}`);
@@ -596,6 +625,8 @@ const LessonScreen = ({ navigation }) => {
         const { sound } = await Audio.Sound.createAsync({ uri: track.audio });
         setSound(sound);
         await sound.playAsync();
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        setIsPlaying(true);
 
         // Get the song name, artist name, and album art
         const songName = track.name;
@@ -626,8 +657,10 @@ const LessonScreen = ({ navigation }) => {
       if (sound) {
           if (isPlaying) {
               await sound.pauseAsync();
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
           } else {
               await sound.playAsync();
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
           }
           setIsPlaying(!isPlaying); // Toggle the state
       }
@@ -645,12 +678,26 @@ const LessonScreen = ({ navigation }) => {
     loadRandomMusicFromJamendo();
   }, []);
 
+  const translate = (itemId, textToTranslate) => {
+    const sourceLang = 'en';
+    const targetLang = 'vi';
+
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sourceLang}&tl=${targetLang}&dt=t&q=${encodeURIComponent(textToTranslate)}`;
+
+    axios.get(url)
+      .then(response => {
+          const translatedText = response.data[0][0][0];
+          setTranslatedMeaning({ id: itemId, text: translatedText });
+      })
+      .catch(error => {
+          console.error('Translation error:', error);
+      });
+};
+
     const renderItem = ({ item, index }) => {
-        const isExpanded = index === expandedItem;
+        const isExpanded = item.id === expandedItem;
         const isLiked = likedItems.includes(item.id);
-        const isImageLoaded = imageLoaded[item.id];
         const isOverflowing = overflowingItems[index];
-        const shouldShowMoreButton = isOverflowing && !isExpanded;
         const isForYouTab = activeTab === 0; 
         const imageSource = isForYouTab ? imageUrls[item.id] : item.imageUrl;
         
@@ -668,7 +715,7 @@ const LessonScreen = ({ navigation }) => {
         >
           <LinearGradient
             colors={['rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0.6)', 'rgba(0, 0, 0, 0.9)']}
-            style={[styles.gradientContainer, { height: expandedItem === index ? '50%' : "33%" }]}
+            style={[styles.gradientContainer, { height: expandedItem === index ? '55%' : "35%" }]}
           >
           </LinearGradient> 
           <View style={styles.contentContainer}>
@@ -690,16 +737,16 @@ const LessonScreen = ({ navigation }) => {
           </View>
           <View style={styles.meaningContainer}>
           <Text
-            numberOfLines={isExpanded ? 8 : 2}
-            style={styles.meaning}
-            onTextLayout={(event) => handleTextLayout(event, index)}
+              numberOfLines={isExpanded ? 8 : 2}
+              style={styles.meaning}
+              onTextLayout={(event) => handleTextLayout(event, index)}
           >
-            {item.meaning}
+              {item.id === translatedMeaning.id ? translatedMeaning.text : item.meaning}
           </Text>
           {isOverflowing && !isExpanded && (
             <TouchableOpacity
               style={styles.seeMoreButton}
-              onPress={() => toggleExpansion(index)}
+              onPress={() => toggleExpansion(item.id)}
             >
               <Text style={styles.seeMoreLink}>more</Text>
             </TouchableOpacity>
@@ -707,15 +754,25 @@ const LessonScreen = ({ navigation }) => {
           {isExpanded && (
             <TouchableOpacity
               style={styles.seeMoreButton}
-              onPress={() => toggleExpansion(index)}
+              onPress={() => toggleExpansion(item.id)}
             >
               <Text style={styles.seeMoreLink}>less</Text>
             </TouchableOpacity>
           )}
         </View>
-        <TouchableOpacity style={styles.translationContainer} >
-          <Text style={styles.Translation}>See translation</Text>
+        <TouchableOpacity 
+            style={styles.translationContainer} 
+            onPress={() => {
+                if (item.id === translatedMeaning.id) {
+                    setTranslatedMeaning({ id: null, text: null });  // Reset the translation if this item is already translated
+                } else {
+                    translate(item.id, item.meaning); // Translate this item's meaning
+                }
+            }}
+        >
+            <Text style={styles.Translation}>{item.id === translatedMeaning.id ? 'See original' : 'See translation'}</Text>
         </TouchableOpacity>
+
 
         <View style={styles.currentSongContainer}>
         <TouchableOpacity onPress={pauseMusic}>
@@ -819,11 +876,16 @@ const LessonScreen = ({ navigation }) => {
     const pageIndex = Math.round(event.nativeEvent.contentOffset.x / Dimensions.get('window').width);
     activeTabIndexRef.current = pageIndex;
     setActiveTab(pageIndex);
+  
+    // Reset the expandedItem state when switching to a different tab
+    setExpandedItem(null);
+  
     if (pageIndex === 1) {
       setNewLikedItemsAdded(false);
       AsyncStorage.setItem('newLikedItemsAdded', 'false');
     }
   }, []);
+  
   
 
   return (
@@ -847,7 +909,7 @@ const LessonScreen = ({ navigation }) => {
           data={vocabularyData}
           renderItem={renderItem}
           keyExtractor={(item) => item.id.toString()}
-          windowSize={3}
+          windowSize={5}
           removeClippedSubviews={true}
           extraData={[likedItems]}
           showsVerticalScrollIndicator={false}
@@ -878,7 +940,7 @@ const LessonScreen = ({ navigation }) => {
                 showsVerticalScrollIndicator={false}
                 removeClippedSubviews={true}
                 pagingEnabled={true}
-                windowSize={2}
+                windowSize={5}
                 estimatedItemSize={868}
                 decelerationRate={'fast'}
               />
@@ -900,7 +962,7 @@ const LessonScreen = ({ navigation }) => {
         {selectedItem ? (
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalWordText}>{selectedItem.word}:</Text>
+              <Text style={styles.modalWordText}>{selectedItem.word}</Text>
               <Text style={styles.modalPronunciationText}>{selectedItem.pronunciation}</Text>
               <TouchableOpacity onPress={closeModal} style={styles.closeButton}>
                 <Icon name="close" size={24} color="#ccc" />
@@ -912,7 +974,7 @@ const LessonScreen = ({ navigation }) => {
               <View key={index} style={styles.commentContainer}>
                 <Icon name={getRandomIcon()} size={20} color="#fff" style={styles.commentIcon} />
                 <View style={styles.commentTextContainer}>
-                  <Text style={styles.modalPartOfSpeech}>Definition ({partOfSpeech}): </Text>
+                  <Text style={styles.modalPartOfSpeech}>Definition ({partOfSpeech})</Text>
                   <Text style={styles.modalMeaningText}>
                     {selectedItem.allDefinitions[index]}
                   </Text>
@@ -1083,7 +1145,7 @@ const styles = StyleSheet.create({
     opacity: 0.8,
   },
   translationContainer: {
-    marginTop: 10,
+    marginTop: 15,
     bottom: 40,
     left: 15,
     width: 130,
@@ -1095,6 +1157,7 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   currentSongContainer: {
+    marginTop: 15,
     flexDirection: 'row', 
     alignItems: 'center',
     justifyContent: 'center',
@@ -1117,7 +1180,7 @@ const styles = StyleSheet.create({
   },
   sideButtonContainer: {
     position: 'absolute',
-    bottom: 48,
+    bottom: 40,
     right: 10,
     flexDirection: 'column',
     alignItems: 'center',
@@ -1138,7 +1201,7 @@ const styles = StyleSheet.create({
     borderRadius: 10, // Adjust the border radius as needed
   },
   modalHeader: {
-    flexDirection: 'columnx',
+    flexDirection: 'column',
     alignContent: 'center',
   },
   modalWordText: {
@@ -1159,7 +1222,7 @@ const styles = StyleSheet.create({
     right: 20, // Adjust the right value to position it where you want
   },
   underline: {
-    height: 2, 
+    height: 1, 
     backgroundColor: '#666', 
     marginVertical: 15,
   },
@@ -1176,6 +1239,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#9BBFE7',
     padding: 10,
     borderRadius: 50,
+    width: 40,
+    height: 40,
   },
   commentTextContainer: {
     flex: 1, 
@@ -1211,10 +1276,10 @@ const styles = StyleSheet.create({
   },
   albumImage: {
     position: 'absolute',
-    top: 12,
-    left: 12,
-    width: 25, 
-    height: 25, 
+    top: 7,
+    left: 7,
+    width: 35, 
+    height: 35, 
     borderRadius: 35,
   },
   skipSong: {
@@ -1235,7 +1300,7 @@ const styles = StyleSheet.create({
     fontWeight:'bold',
     position: 'absolute',
     bottom: -5,
-    left: 0,
+    left: -2,
     color: '#999',
     fontSize: 16,
     opacity: 0.6,
