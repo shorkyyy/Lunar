@@ -1061,8 +1061,8 @@ const styles = StyleSheet.create({
     color: 'white',
     padding: 20,
     position: 'absolute',
-    left: 70,
-    top: -30,      
+    left: 65,
+    top: -32,      
   },
   dot: {
     position: 'absolute',
