@@ -21,6 +21,8 @@ const iconsArray = ['heart', 'paw', 'star', 'bell', 'paw', 'coffee', 'leaf'];
 const LessonScreen = ({ navigation }) => {      
     const flatListRef = useRef(null);
     const [expandedItem, setExpandedItem] = useState(null);
+    const [expandedItemForYou, setExpandedItemForYou] = useState(null);
+    const [expandedItemLiked, setExpandedItemLiked] = useState(null);
     const [imageLoaded, setImageLoaded] = useState({});
     const [imageUrls, setImageUrls] = useState({});
     const [activeTab, setActiveTab] = useState(0);
@@ -38,8 +40,7 @@ const LessonScreen = ({ navigation }) => {
     const [selectedItem, setSelectedItem] = useState(null);
     const iconRef = useRef(null);
     const [translatedMeaning, setTranslatedMeaning] = useState({ id: null, text: null });
-
-
+  
     const onOpen = (item) => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       setSelectedItem(item); // Set the selected item
@@ -174,98 +175,89 @@ const LessonScreen = ({ navigation }) => {
       }
     };
 
-    const placeholderWords = [
-      'serenity', 'elegance', 'innovation', 'blossom', 'grace', 'inspiration'
-    ];  
-    
-    const fetchedImages = new Set();
-    const usedQueries = new Set();
+    const placeholderWords = shuffleArray([
+      'sparkle', 'blossom', 'joyful', 'vibrant', 'harmony', 'radiant'
+    ]);
     
     const fetchImage = useMemo(() => {
       const cachedImageUrls = {};
       const usedImageUrls = new Set(); // Keep track of used image URLs
-
+    
       return async (word) => {
-          try {
-              // Check if the image URL is already cached
-              if (cachedImageUrls[word]) {
-                  return cachedImageUrls[word];
-              }
-
-              // Search for images using the given word
-              const response = await client.photos.search({ query: word, per_page: 4 });
-              const photos = response.photos;
-
-              // Find the first available image that is not in fetchedImages or usedImageUrls
-              const availableImage = photos.find((photo) => {
-                  const imageUrl = photo.src.large;
-                  return !fetchedImages.has(imageUrl) && !usedImageUrls.has(imageUrl);
-              });
-
-              if (availableImage) {
-                  const imageUrl = availableImage.src.large;
-                  fetchedImages.add(imageUrl);
-                  usedImageUrls.add(imageUrl); // Mark the image URL as used
-
-                  // After successfully fetching the image URL, cache it
-                  cachedImageUrls[word] = imageUrl;
-
-                  return imageUrl;
-              }
-              // Shuffle the placeholderWords array to avoid using the same word repeatedly
-              const shuffledWords = shuffleArray(placeholderWords);
-
-              for (const placeholderWord of shuffledWords) {
-                  // Reset usedQueries Set for each placeholder word
-                  usedQueries.clear();
-
-                  const placeholderResponse = await client.photos.search({ query: placeholderWord, per_page: 4 });
-                  const placeholderPhotos = placeholderResponse.photos;
-
-                  // Find the first available placeholder image that is not in fetchedImages or usedImageUrls
-                  const availablePlaceholderImage = placeholderPhotos.find((photo) => {
-                      const imageUrl = photo.src.large;
-                      return !fetchedImages.has(imageUrl) && !usedImageUrls.has(imageUrl);
-                  });
-
-                  if (availablePlaceholderImage) {
-                      const imageUrl = availablePlaceholderImage.src.large;
-                      fetchedImages.add(imageUrl);
-                      usedImageUrls.add(imageUrl); // Mark the image URL as used
-
-                      // After successfully fetching the image URL, cache it
-                      cachedImageUrls[word] = imageUrl;
-
-                      return imageUrl;
-                  }
-              }
-          } catch (error) {
-              console.error('Error fetching image:', error);
+        try {
+          // Check if the image URL is already cached
+          if (cachedImageUrls[word]) {
+            return cachedImageUrls[word];
           }
-
-          return 'https://example.com/placeholder-image.jpg'; // Default placeholder image URL
+    
+          // Search for images using the given word
+          const response = await client.photos.search({ query: word, per_page: 2 });
+          const photos = response.photos;
+    
+          // Shuffle the photos array to ensure randomness
+          const shuffledPhotos = shuffleArray(photos);
+    
+          // Find the first available image that is not in usedImageUrls
+          const availableImage = shuffledPhotos.find((photo) => {
+            const imageUrl = photo.src.large;
+            return !usedImageUrls.has(imageUrl);
+          });
+    
+          if (availableImage) {
+            const imageUrl = availableImage.src.large;
+            usedImageUrls.add(imageUrl); // Mark the image URL as used
+    
+            // After successfully fetching the image URL, cache it
+            cachedImageUrls[word] = imageUrl;
+    
+            return imageUrl;
+          }    
+          // If no image is found for the given word, use a placeholder word instead
+          const placeholderWord = placeholderWords[Math.floor(Math.random() * placeholderWords.length)];
+          const placeholderResponse = await client.photos.search({ query: placeholderWord, per_page: 4 });
+          const placeholderPhotos = placeholderResponse.photos;
+    
+          // Find the first available image that is not in usedImageUrls
+          const availablePlaceholderImage = placeholderPhotos.find((photo) => {
+            const imageUrl = photo.src.large;
+            return !usedImageUrls.has(imageUrl);
+          });
+    
+          if (availablePlaceholderImage) {
+            const imageUrl = availablePlaceholderImage.src.large;
+            usedImageUrls.add(imageUrl); // Mark the image URL as used
+    
+            // After successfully fetching the image URL, cache it
+            cachedImageUrls[word] = imageUrl;
+    
+            return imageUrl;
+          }
+        } catch (error) {
+          console.error('Error fetching image:', error);
+        }
+    
+        return 'https://example.com/placeholder-image.jpg'; // Default placeholder image URL
       };
-  }, [fetchedImages]);
-  
-  const shuffleArray = (array) => {
-    let currentIndex = array.length, randomIndex;
-  
-    while (currentIndex != 0) {
-  
-      randomIndex = Math.floor(Math.random() * currentIndex);
-      currentIndex--;
-
-      [array[currentIndex], array[randomIndex]] = [
-        array[randomIndex], array[currentIndex]];
+    }, []);
+    
+  function shuffleArray(array) {
+    for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
     }
-  
     return array;
-  };  
+  }
+    const capitalizeFirstLetter = (string) => {
+      // Find the index of the first letter in the string
+      const firstLetterIndex = string.search(/[a-zA-Z]/);
+      
+      // If there's no letter in the string, return the original string
+      if (firstLetterIndex === -1) return string;
+      
+      // Capitalize the first letter and concatenate it with the rest of the string
+      return string.slice(0, firstLetterIndex) + string.charAt(firstLetterIndex).toUpperCase() + string.slice(firstLetterIndex + 1);
+  };
   
-      // Function to capitalize the first letter of a string
-      const capitalizeFirstLetter = (string) => {
-          return string.charAt(0).toUpperCase() + string.slice(1);
-      };      
 
       const formatPartOfSpeech = (string) => {
         const partsOfSpeech = {
@@ -280,6 +272,7 @@ const LessonScreen = ({ navigation }) => {
         <TouchableWithoutFeedback
           key={tab}
           onPress={() => {
+            
             if (vocabularyData.length > 0) {
               scrollViewRef.current.scrollTo({
                 x: index * Dimensions.get('window').width,
@@ -488,6 +481,7 @@ const LessonScreen = ({ navigation }) => {
     };    
     const playPronunciation = async (audioUrl) => {
       try {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
         const backgroundMusicWasPlaying = sound && isPlaying;
     
         if (backgroundMusicWasPlaying) {
@@ -585,73 +579,76 @@ const LessonScreen = ({ navigation }) => {
   };
   
   const toggleExpansion = (itemId) => {
-    LayoutAnimation.configureNext(customAnimationConfig);
-    setExpandedItem(prev => (prev === itemId ? null : itemId));
+    // Determine which state variable to update based on the active tab
+    if (activeTab === 0) {
+      // Update the For You tab's expansion state
+      LayoutAnimation.configureNext(customAnimationConfig);
+      setExpandedItemForYou((prev) => (prev === itemId ? null : itemId));
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    } else if (activeTab === 1) {
+      // Update the Liked tab's expansion state
+      LayoutAnimation.configureNext(customAnimationConfig);
+      setExpandedItemLiked((prev) => (prev === itemId ? null : itemId));
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
   };
-  
-  
   
   const [sound, setSound] = useState(null);
   const [songName, setSongName] = useState('');
-  const [artistName, setArtistName] = useState('');
   const [albumArt, setAlbumArt] = useState('');
-
-  const JAMENDO_API_KEY = 'aa92f003'; 
-  const keyword = 'guitar';
-  const maxOffset = 5; 
+  
+  const DEEZER_API_KEY = 'c9c958c48482781929746cd86bf8c907'; // Replace with your Deezer API key
+  const artistName = 'Lofi Fruits Music';
   let playedSongs = []; // Keep track of played songs
   
-  async function loadRandomMusicFromJamendo() {
+  async function loadRandomMusicFromDeezer() {
     try {
-      let offset;
+      let track;
       do {
-        offset = Math.floor(Math.random() * maxOffset);
-      } while (playedSongs.includes(offset)); // Generate a new offset if the song has already been played
-  
-      playedSongs.push(offset); // Add the offset to the list of played songs
-      if (playedSongs.length > maxOffset) {
+        const DEEZER_ENDPOINT = `https://api.deezer.com/search?q=artist:"${artistName}"&limit=50&output=json&key=${DEEZER_API_KEY}`;
+        const response = await axios.get(DEEZER_ENDPOINT);
+        if (response.data.data.length === 0) {
+          console.error(`No songs found for artist: ${artistName}`);
+          return;
+        }
+        track = response.data.data[Math.floor(Math.random() * response.data.data.length)];
+      } while (playedSongs.includes(track.id)); // Generate a new song if the song has already been played
+      playedSongs.push(track.id); // Add the song id to the list of played songs
+      if (playedSongs.length > 50) {
         playedSongs.shift(); // Remove the oldest song when the list is full
       }
-  
-      const JAMENDO_ENDPOINT = `https://api.jamendo.com/v3.0/tracks/?client_id=${JAMENDO_API_KEY}&limit=1&format=jsonpretty&search=${keyword}&offset=${offset}`;
-      const response = await axios.get(JAMENDO_ENDPOINT);
-      if (response.data.results.length === 0) {
-        console.error(`No songs found for keyword: ${keyword}`);
-        return;
-      }
-      const track = response.data.results[0];
 
-      if (track && track.audio) {
-        const { sound } = await Audio.Sound.createAsync({ uri: track.audio });
+      if (track && track.preview) {
+        const { sound } = await Audio.Sound.createAsync({ uri: track.preview });
         setSound(sound);
         await sound.playAsync();
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
         setIsPlaying(true);
 
         // Get the song name, artist name, and album art
-        const songName = track.name;
-        const artistName = track.artist_name;
-        const albumArtUrl = track.image;
+        const songName = track.title;
+        const albumArtUrl = track.album.cover;
 
         // Update the songName and artistName state variables
         setSongName(songName);
-        setArtistName(artistName);
+        // setArtistName(artistName);
         setAlbumArt(albumArtUrl);
 
         // Add an event listener to detect when the current song ends
         sound.setOnPlaybackStatusUpdate(async (status) => {
           if (status.didJustFinish) {
             // If the song ended, load and play a new random song
-            loadRandomMusicFromJamendo();
+            loadRandomMusicFromDeezer();
           }
         });
       } else {
-        console.error('No audio track found in Jamendo response. Retrying...');
+        console.error('No audio track found in Deezer response. Retrying...');
       }
     } catch (error) {
-      console.error('Error fetching track from Jamendo:', error);
+      console.error('Error fetching track from Deezer:', error);
     }
   }
+
   
   async function pauseMusic() {
       if (sound) {
@@ -675,27 +672,39 @@ const LessonScreen = ({ navigation }) => {
   }, [sound]);
 
   useEffect(() => {
-    loadRandomMusicFromJamendo();
-  }, []);
+    if (loadingMore) {
+      loadRandomMusicFromDeezer();
+    }
+  }, [loadingMore]);
 
-  const translate = (itemId, textToTranslate) => {
-    const sourceLang = 'en';
-    const targetLang = 'vi';
+    const translate = (itemId, textToTranslate) => {
+      const sourceLang = 'en';
+      const targetLang = 'vi';
 
-    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sourceLang}&tl=${targetLang}&dt=t&q=${encodeURIComponent(textToTranslate)}`;
+      try {
+          // Replace semicolon with comma before encoding and translating
+          const textToTranslateReplaced = textToTranslate.replace(/;/g, ',');
+          const encodedText = encodeURIComponent(textToTranslateReplaced);
+          const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sourceLang}&tl=${targetLang}&dt=t&q=${encodedText}`;
 
-    axios.get(url)
-      .then(response => {
-          const translatedText = response.data[0][0][0];
-          setTranslatedMeaning({ id: itemId, text: translatedText });
-      })
-      .catch(error => {
-          console.error('Translation error:', error);
-      });
-};
+          axios.get(url)
+          .then(response => {
+              const translatedText = response.data[0][0][0];
+              const decodedText = decodeURIComponent(translatedText);
+              setTranslatedMeaning({ id: itemId, text: decodedText });
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          })
+          .catch(error => {
+              console.error('Translation error:', error);
+          });
+      
+      } catch (error) {
+          console.error('Encoding error:', error);
+      }
+  };
 
     const renderItem = ({ item, index }) => {
-        const isExpanded = item.id === expandedItem;
+        const isExpanded = activeTab === 0 ? item.id === expandedItemForYou : item.id === expandedItemLiked;
         const isLiked = likedItems.includes(item.id);
         const isOverflowing = overflowingItems[index];
         const isForYouTab = activeTab === 0; 
@@ -792,6 +801,7 @@ const LessonScreen = ({ navigation }) => {
             >
               {`${songName} - ${artistName}`}
             </TextTicker>
+            <Icon name="pause" size={16} color="#ccc" style={styles.musicNoteIcon} />
           </View>
 
           <View style={styles.sideButtonContainer}>
@@ -834,7 +844,7 @@ const LessonScreen = ({ navigation }) => {
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.discButton}
-              onPress={loadRandomMusicFromJamendo}
+              onPress={loadRandomMusicFromDeezer}
             >
               <Animated.View
                   style={{
@@ -846,7 +856,7 @@ const LessonScreen = ({ navigation }) => {
                       style={styles.albumImage}
                       source={albumArt ? { uri: albumArt } : null}
                   />
-                  <Icon name="forward" size={10} color="#fff" style={styles.skipSong} />
+                  <Icon name="forward" size={11} color="#fff" style={styles.skipSong} />
               </Animated.View>
             </TouchableOpacity>
             </View>
@@ -873,20 +883,16 @@ const LessonScreen = ({ navigation }) => {
   };
 
   const handleScrollEnd = useCallback((event) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const pageIndex = Math.round(event.nativeEvent.contentOffset.x / Dimensions.get('window').width);
     activeTabIndexRef.current = pageIndex;
     setActiveTab(pageIndex);
-  
-    // Reset the expandedItem state when switching to a different tab
-    setExpandedItem(null);
   
     if (pageIndex === 1) {
       setNewLikedItemsAdded(false);
       AsyncStorage.setItem('newLikedItemsAdded', 'false');
     }
   }, []);
-  
-  
 
   return (
     <View style={styles.container}>
@@ -943,6 +949,7 @@ const LessonScreen = ({ navigation }) => {
                 windowSize={5}
                 estimatedItemSize={868}
                 decelerationRate={'fast'}
+                extraData={[expandedItemLiked, translatedMeaning]}
               />
               </View>
             ) : (
@@ -955,7 +962,8 @@ const LessonScreen = ({ navigation }) => {
       <Modalize
         ref={modalizeRef}
         modalStyle={{ backgroundColor: '#121212' }}
-        modalHeight={700}
+        modalHeight={Dimensions.get('window').height}
+        snapPoint={500}
         handlePosition="inside"
         handleStyle={{ backgroundColor: '#666' }}
       >
@@ -1166,8 +1174,8 @@ const styles = StyleSheet.create({
     marginTop: 20, 
     backgroundColor: "rgba(136, 136, 136, 0.5)",
     borderRadius: 20,
-    width: 230,
-    paddingVertical: 5,
+    width: 240,
+    paddingVertical: 6,
     paddingHorizontal: 15,
   },
   musicNoteIcon: {
@@ -1201,6 +1209,7 @@ const styles = StyleSheet.create({
     borderRadius: 10, // Adjust the border radius as needed
   },
   modalHeader: {
+    marginTop: 10,
     flexDirection: 'column',
     alignContent: 'center',
   },
@@ -1218,7 +1227,7 @@ const styles = StyleSheet.create({
   },
   closeButton: {
     position: 'absolute',
-    top: 15,
+    top: 10,
     right: 20, // Adjust the right value to position it where you want
   },
   underline: {
@@ -1285,7 +1294,7 @@ const styles = StyleSheet.create({
   skipSong: {
     position: 'absolute',
     top: 35,
-    left: 16,
+    left: 15,
     backgroundColor: '#9BBFE7',
     borderRadius: 20,
     padding: 6,
