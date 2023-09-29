@@ -4,6 +4,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import LessonScreen from './src/LessonScreen'; // Import the LessonScreen component
 import { Text, View } from 'react-native';
+import AboutScreen from './src/AboutScreen';
 
 const Stack = createStackNavigator();
 
@@ -32,8 +33,9 @@ export default function App() {
           headerTransparent: true, // Make the header transparent
         }}
       >
-        <Stack.Screen name="Lessons" component={LessonScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="Lessons" component={LessonScreen} options={{ headerShown: false }}  />
         <Stack.Screen name="LessonDetail" component={LessonDetailScreen} />
+        <Stack.Screen name="AboutScreen" component={AboutScreen} options={{ headerTitle: '' }}/>
       </Stack.Navigator>
       <StatusBar style="light" />
       <StatusBar style="light" androidNavigationBarStyle="light-content" />

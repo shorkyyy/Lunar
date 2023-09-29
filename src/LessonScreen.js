@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
-import { View, FlatList, Text, StyleSheet, Dimensions, TouchableOpacity, Image, ImageBackground, ScrollView, SafeAreaView, Animated, TouchableWithoutFeedback, ActivityIndicator, StatusBar, Share, LayoutAnimation, UIManager, Easing } from 'react-native';
+import { View, FlatList, Text, StyleSheet, Dimensions, TouchableOpacity, Image, ImageBackground, ScrollView, SafeAreaView, Animated, TouchableWithoutFeedback, ActivityIndicator, StatusBar, Share, LayoutAnimation, UIManager, Platform } from 'react-native';
 import Icon from 'react-native-vector-icons/FontAwesome';
 import { createClient } from 'pexels';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -11,6 +11,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import TextTicker from 'react-native-text-ticker'
 import { Modalize } from 'react-native-modalize';
 import { FlashList } from "@shopify/flash-list";
+
 
 const tabs = ['For You', 'Liked']; 
 const client = createClient('XoJwUYOzKMoDE3chOvLGeDqEoSdDtUNseGnCEnIQB4n2V3Te2lMlQLHS');
@@ -134,8 +135,7 @@ const LessonScreen = ({ navigation }) => {
                 : 'Unavailable';
     
               const imageUrl = await fetchImage(word);
-              await SplashScreen.hideAsync();
-    
+              await SplashScreen.hideAsync();    
               return {
                 id: word,
                 word: capitalizedWord,
@@ -214,7 +214,7 @@ const LessonScreen = ({ navigation }) => {
           }    
           // If no image is found for the given word, use a placeholder word instead
           const placeholderWord = placeholderWords[Math.floor(Math.random() * placeholderWords.length)];
-          const placeholderResponse = await client.photos.search({ query: placeholderWord, per_page: 4 });
+          const placeholderResponse = await client.photos.search({ query: placeholderWord, per_page: 5 });
           const placeholderPhotos = placeholderResponse.photos;
     
           // Find the first available image that is not in usedImageUrls
@@ -272,7 +272,6 @@ const LessonScreen = ({ navigation }) => {
         <TouchableWithoutFeedback
           key={tab}
           onPress={() => {
-            
             if (vocabularyData.length > 0) {
               scrollViewRef.current.scrollTo({
                 x: index * Dimensions.get('window').width,
@@ -280,7 +279,7 @@ const LessonScreen = ({ navigation }) => {
               });
               activeTabIndexRef.current = index; // Update the activeTabIndexRef
               setActiveTab(index); // Update the state to trigger re-render
-
+      
               if (index === 1) {
                 setNewLikedItemsAdded(false);
               }
@@ -299,7 +298,7 @@ const LessonScreen = ({ navigation }) => {
             )}
           </View>
         </TouchableWithoutFeedback>
-      );          
+      );       
       
     const [likedItems, setLikedItems] = useState([]);
     const [lastTapTime, setLastTapTime] = useState(0);
@@ -801,7 +800,6 @@ const LessonScreen = ({ navigation }) => {
             >
               {`${songName} - ${artistName}`}
             </TextTicker>
-            <Icon name="pause" size={16} color="#ccc" style={styles.musicNoteIcon} />
           </View>
 
           <View style={styles.sideButtonContainer}>
@@ -881,9 +879,12 @@ const LessonScreen = ({ navigation }) => {
       </View>
     );
   };
+  const navigateToAboutScreen = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    navigation.navigate('AboutScreen')
+  }; 
 
   const handleScrollEnd = useCallback((event) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const pageIndex = Math.round(event.nativeEvent.contentOffset.x / Dimensions.get('window').width);
     activeTabIndexRef.current = pageIndex;
     setActiveTab(pageIndex);
@@ -891,6 +892,9 @@ const LessonScreen = ({ navigation }) => {
     if (pageIndex === 1) {
       setNewLikedItemsAdded(false);
       AsyncStorage.setItem('newLikedItemsAdded', 'false');
+    }
+    if (pageIndex === 0) {
+
     }
   }, []);
 
@@ -963,7 +967,6 @@ const LessonScreen = ({ navigation }) => {
         ref={modalizeRef}
         modalStyle={{ backgroundColor: '#121212' }}
         modalHeight={Dimensions.get('window').height}
-        snapPoint={500}
         handlePosition="inside"
         handleStyle={{ backgroundColor: '#666' }}
       >
@@ -1004,9 +1007,14 @@ const LessonScreen = ({ navigation }) => {
         )}
       </Modalize>
 
-      <SafeAreaView style={styles.tabBar}>
-        {tabs.map((tab, index) => renderTab(tab, index))}
-      </SafeAreaView>
+      {vocabularyData.length === 0 && loadingMore ? null : (
+        <SafeAreaView style={styles.tabBar}>
+          {tabs.map((tab, index) => renderTab(tab, index))}
+          <TouchableOpacity  onPress={navigateToAboutScreen}>
+            <Icon name='cog' size={20} style={styles.settingButton}></Icon>
+          </TouchableOpacity>
+        </SafeAreaView>
+      )}
     </View>
   );
 };
@@ -1014,7 +1022,7 @@ const LessonScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: '#121212',
   },
   tabBar: {
     flexDirection: 'row',
@@ -1048,6 +1056,13 @@ const styles = StyleSheet.create({
     borderBottomColor: '#fff', 
     width: 20,
     alignSelf: 'center', 
+  },
+  settingButton: {
+    color: 'white',
+    padding: 20,
+    position: 'absolute',
+    left: 70,
+    top: -30,      
   },
   dot: {
     position: 'absolute',
@@ -1153,7 +1168,7 @@ const styles = StyleSheet.create({
     opacity: 0.8,
   },
   translationContainer: {
-    marginTop: 15,
+    marginVertical: 15,
     bottom: 40,
     left: 15,
     width: 130,
@@ -1165,21 +1180,20 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   currentSongContainer: {
-    marginTop: 15,
+    marginTop: 5,
     flexDirection: 'row', 
     alignItems: 'center',
     justifyContent: 'center',
     bottom: 40,
     left: 15,
-    marginTop: 20, 
     backgroundColor: "rgba(136, 136, 136, 0.5)",
     borderRadius: 20,
-    width: 240,
+    width: 230,
     paddingVertical: 6,
     paddingHorizontal: 15,
   },
   musicNoteIcon: {
-    marginRight: 10,
+    padding: 5,
   },
   currentSongText: {
     fontSize: 16,
@@ -1271,7 +1285,6 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     color: '#ccc',
     padding: 5,
-    borderRadius: 10,
   },
   shareButton: {
     marginTop: 30,
@@ -1305,11 +1318,11 @@ const styles = StyleSheet.create({
     marginTop: 5,
   },
   seeMoreLink: {
-    padding: 5,
+    padding: 10,
     fontWeight:'bold',
     position: 'absolute',
-    bottom: -5,
-    left: -2,
+    bottom: -10,
+    left: -6,
     color: '#999',
     fontSize: 16,
     opacity: 0.6,
